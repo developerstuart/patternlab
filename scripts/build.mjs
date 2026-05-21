@@ -73,6 +73,11 @@ const readJson = (filePath) => {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
 };
 
+const readText = (filePath) => {
+  if (!fs.existsSync(filePath)) return '';
+  return fs.readFileSync(filePath, 'utf8');
+};
+
 const mergeDeep = (...objs) => {
   const result = {};
   for (const obj of objs) {
@@ -141,18 +146,23 @@ const renderTemplate = async (templatePath, engine, context) => {
   return template;
 };
 
-// Wrap rendered body in a minimal HTML page that includes app.css / app.js
-const wrapComponent = (body) => `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
+const buildComponentHead = (extraHead = '') => {
+  const trimmedExtra = extraHead.trim();
+  const extra = trimmedExtra ? `\n${trimmedExtra}\n` : '\n';
+  return `  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script>(function(){var t=localStorage.getItem('pl-theme');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');})()</script>
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css">${extra}  <script src="/app.js" defer></script>`;
+};
+
+// Wrap rendered body in a minimal HTML page that includes app.css / app.js
+const wrapComponent = (body, extraHead = '') => `<!doctype html>
+<html lang="en">
+<head>
+${buildComponentHead(extraHead)}
 </head>
 <body>
 ${body}
-<script src="/app.js"></script>
 <script>
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'pl-theme') {
@@ -380,13 +390,13 @@ const stripPrivate = (node) => {
 
 // ─── Render a single component or variation ────────────────────────────────────
 
-const renderItem = async (item) => {
+const renderItem = async (item, componentHeadExtra) => {
   const { templatePath, engine, baseJsonPath, varJsonPath, globalData } = item._render;
   const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
   const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
   const context = mergeDeep(globalData, baseData, varData);
   const body = await renderTemplate(templatePath, engine, context);
-  return wrapComponent(body);
+  return wrapComponent(body, componentHeadExtra);
 };
 
 // ─── UI HTML ─────────────────────────────────────────────────────────────────
@@ -698,8 +708,9 @@ const main = async () => {
 
   // Render all components/variations
   const renderables = flattenRenderables(tree);
+  const componentHeadExtra = readText(path.join(srcRoot, '_component-head.html'));
   for (const item of renderables) {
-    const html = await renderItem(item);
+    const html = await renderItem(item, componentHeadExtra);
     const outPath = path.join(distRoot, ...item.outputPath.split('/'));
     writeFile(outPath, html);
   }

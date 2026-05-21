@@ -19,6 +19,7 @@ A modern, minimal Pattern Lab built on Node.js — organise and preview UI compo
   - `button~outline.json` — JSON-only variation; inherits the base template and deep-merges JSON.
   - `button~ghost.twig` (+ optional `button~ghost.json`) — template variation with its own markup.
 - **SCSS / JS pipeline** — place `.scss` and `.js` files alongside components. They are compiled and merged into `dist/app.css` and `dist/app.js` automatically.
+- **Custom component `<head>` markup** — add `src/_component-head.html` to inject extra tags (for example Google/Adobe font stylesheets) into every generated component page.
 - **Dark mode** — toggle in the header. Remembers preference in `localStorage`. Component iframes sync the theme via `postMessage`.
 - **Richer navigation** — click a folder to see all its components in a grid view. Click a component to preview it in a full iframe. Supports multi-level hierarchies (e.g. `atoms/buttons/button-circle`).
 - **Assets folder** — put example images, fonts, and brand media in `src/assets/`. They are copied to `dist/assets/`.
@@ -28,6 +29,7 @@ A modern, minimal Pattern Lab built on Node.js — organise and preview UI compo
 ```
 src/
   _global.json              # Global data available to every component
+  _component-head.html      # Optional extra tags for generated component page <head>
   assets/                   # Images, fonts, and other brand media
   components/
     atoms/                  # A component section (name is up to you)
@@ -84,6 +86,11 @@ order: 3
 
 Then add component files (`.twig`, `.json`, `.scss`) to the folder.
 
+## Customizing generated component page `<head>`
+
+Create `src/_component-head.html` to inject additional markup into every generated component page.  
+This is useful for external stylesheets such as Google Fonts or Adobe Fonts.
+
 ## Optional full Twig engine
 
 `php/render.php` has a safe fallback renderer for basic Twig (`{{ variable }}`, `{% include %}`, `{% if %}`, `{% for %}`).
@@ -93,4 +100,3 @@ For full Twig syntax support (filters, extensions, etc.), install Twig via Compo
 ```bash
 cd php && composer install
 ```
-

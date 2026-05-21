@@ -70,3 +70,19 @@ test('build renders components from flat folder structure', () => {
   const outlineEntry = manifest.find((m) => m.id === 'atoms/button~outline');
   assert.equal(outlineEntry.type, 'variation');
 });
+
+test('build injects optional custom component head markup', () => {
+  const customHeadPath = path.join(repoRoot, 'src', '_component-head.html');
+  fs.writeFileSync(customHeadPath, '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap">', 'utf8');
+  try {
+    runBuild();
+
+    const dist = path.join(repoRoot, 'dist');
+    const buttonHtml = fs.readFileSync(path.join(dist, 'components', 'atoms', 'button.html'), 'utf8');
+    assert.match(buttonHtml, /https:\/\/fonts\.googleapis\.com\/css2\?family=Inter/);
+    assert.match(buttonHtml, /<link rel="stylesheet" href="\/app\.css">/);
+    assert.match(buttonHtml, /<script src="\/app\.js" defer><\/script>/);
+  } finally {
+    fs.rmSync(customHeadPath, { force: true });
+  }
+});
