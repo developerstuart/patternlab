@@ -1,0 +1,13 @@
+{
+    "name": "developerstuart/patternlab-php-renderer",
+    "description": "PHP Twig renderer for Pattern Lab",
+    "require": {
+        "twig/twig": "^3.10"
+    },
+    "authors": [
+        {
+            "name": "Developer Stuart",
+            "email": "noreply@example.com"
+        }
+    ]
+}
