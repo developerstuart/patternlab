@@ -14,5 +14,11 @@
     "atomic-design",
     "twig"
   ],
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "liquidjs": "^10.27.0",
+    "mustache": "^4.2.0",
+    "nunjucks": "^3.2.4",
+    "sass": "^1.99.0"
+  }
 }
