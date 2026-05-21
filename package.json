@@ -1,0 +1,24 @@
+{
+  "name": "patternlab",
+  "version": "1.0.0",
+  "description": "Minimal modern Pattern Lab with Node + PHP Twig rendering",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "node scripts/serve.mjs",
+    "dev": "npm run build && npm run serve",
+    "test": "node --test"
+  },
+  "keywords": [
+    "pattern-lab",
+    "atomic-design",
+    "twig"
+  ],
+  "license": "ISC",
+  "devDependencies": {
+    "liquidjs": "^10.27.0",
+    "mustache": "^4.2.0",
+    "nunjucks": "^3.2.4",
+    "sass": "^1.99.0"
+  }
+}

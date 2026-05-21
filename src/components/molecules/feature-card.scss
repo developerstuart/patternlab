@@ -1,0 +1,27 @@
+.feature-card {
+  border: 1px solid #e4e4e7;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  max-width: 420px;
+
+  &__title {
+    margin: 0 0 0.5rem;
+    font-size: 1.125rem;
+    color: #18181b;
+    font-weight: 600;
+  }
+
+  &__summary {
+    margin: 0 0 1rem;
+    color: #71717a;
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+}
+
+[data-theme="dark"] .feature-card {
+  border-color: #27272a;
+
+  &__title { color: #fafafa; }
+  &__summary { color: #a1a1aa; }
+}
