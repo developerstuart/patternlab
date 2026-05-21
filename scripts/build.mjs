@@ -3,123 +3,730 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// ─── Paths ────────────────────────────────────────────────────────────────────
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const componentsRoot = path.join(repoRoot, 'src', 'components');
+const srcRoot = path.join(repoRoot, 'src');
+const componentsRoot = path.join(srcRoot, 'components');
+const assetsRoot = path.join(srcRoot, 'assets');
 const distRoot = path.join(repoRoot, 'dist');
-const outputComponentsRoot = path.join(distRoot, 'components');
-const rendererPath = path.join(repoRoot, 'php', 'render.php');
+const phpRenderer = path.join(repoRoot, 'php', 'render.php');
 
-const walk = (dir) => {
-  if (!fs.existsSync(dir)) return [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  return entries.flatMap((entry) => {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) return walk(fullPath);
-    return entry.name.endsWith('.twig') ? [fullPath] : [];
-  });
-};
+// ─── Supported template engines ───────────────────────────────────────────────
 
-const getContextPath = (templatePath) => templatePath.replace(/\.twig$/, '.json');
+const TEMPLATE_EXTS = new Map([
+  ['.twig', 'twig'],
+  ['.mustache', 'mustache'],
+  ['.njk', 'nunjucks'],
+  ['.liquid', 'liquid'],
+  ['.hbs', 'handlebars'],
+  ['.html', 'html'],
+]);
 
-const renderTemplate = (templatePath) => {
-  const contextPath = getContextPath(templatePath);
-  const args = [rendererPath, '--template', templatePath, '--components-root', componentsRoot];
+// ─── Utilities ────────────────────────────────────────────────────────────────
 
-  if (fs.existsSync(contextPath)) {
-    args.push('--context', contextPath);
-  }
-
-  return execFileSync('php', args, { encoding: 'utf8' });
-};
+const toPosix = (v) => v.split(path.sep).join('/');
 
 const writeFile = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
 };
 
-const toPosix = (value) => value.split(path.sep).join('/');
+const copyDir = (src, dest) => {
+  if (!fs.existsSync(src)) return;
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name);
+    const d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDir(s, d);
+    else fs.copyFileSync(s, d);
+  }
+};
 
-const componentTemplates = walk(componentsRoot);
+// Minimal YAML frontmatter parser (key: value pairs only)
+const parseFrontmatter = (raw) => {
+  const m = raw.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?([\s\S]*)$/);
+  if (!m) return { meta: {}, body: raw };
+  const meta = {};
+  for (const line of m[1].split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon < 0) continue;
+    const key = line.slice(0, colon).trim();
+    let val = line.slice(colon + 1).trim();
+    if (val === 'true') val = true;
+    else if (val === 'false') val = false;
+    else if (val !== '' && !Number.isNaN(Number(val))) val = Number(val);
+    if (key) meta[key] = val;
+  }
+  return { meta, body: m[2] };
+};
 
-fs.rmSync(distRoot, { recursive: true, force: true });
-fs.mkdirSync(outputComponentsRoot, { recursive: true });
+const readMeta = (filePath) => {
+  if (!fs.existsSync(filePath)) return {};
+  return parseFrontmatter(fs.readFileSync(filePath, 'utf8')).meta;
+};
 
-const components = componentTemplates.map((templatePath) => {
-  const relativeTwigPath = path.relative(componentsRoot, templatePath);
-  const relativeHtmlPath = relativeTwigPath.replace(/\.twig$/, '.html');
-  const outputPath = path.join(outputComponentsRoot, relativeHtmlPath);
-  const html = renderTemplate(templatePath);
+const readJson = (filePath) => {
+  if (!fs.existsSync(filePath)) return null;
+  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+};
 
-  writeFile(outputPath, html);
+const mergeDeep = (...objs) => {
+  const result = {};
+  for (const obj of objs) {
+    if (!obj || typeof obj !== 'object') continue;
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== null && typeof v === 'object' && !Array.isArray(v) &&
+          typeof result[k] === 'object' && result[k] !== null && !Array.isArray(result[k])) {
+        result[k] = mergeDeep(result[k], v);
+      } else {
+        result[k] = v;
+      }
+    }
+  }
+  return result;
+};
 
-  const folderType = relativeTwigPath.startsWith(`atomic${path.sep}`) ? 'atomic' : 'custom';
+const toLabel = (stem) =>
+  stem.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-  return {
-    name: path.basename(relativeTwigPath, '.twig'),
-    type: folderType,
-    source: toPosix(relativeTwigPath),
-    output: toPosix(path.join('components', relativeHtmlPath))
-  };
-});
+// ─── Rendering engines ────────────────────────────────────────────────────────
 
-components.sort((a, b) => a.output.localeCompare(b.output));
+// Lazy module cache
+const engines = {};
 
-writeFile(path.join(distRoot, 'components.json'), `${JSON.stringify(components, null, 2)}\n`);
+const renderTemplate = async (templatePath, engine, context) => {
+  const template = fs.readFileSync(templatePath, 'utf8');
 
-const componentLinks = components
-  .map((component) => `<li><button data-component="${component.output}">${component.type} / ${component.source}</button></li>`)
-  .join('');
+  if (engine === 'twig') {
+    const tmpCtx = path.join(distRoot, '_ctx.json');
+    fs.mkdirSync(distRoot, { recursive: true });
+    fs.writeFileSync(tmpCtx, JSON.stringify(context), 'utf8');
+    const args = [phpRenderer, '--template', templatePath, '--components-root', componentsRoot, '--context', tmpCtx];
+    const html = execFileSync('php', args, { encoding: 'utf8' });
+    fs.rmSync(tmpCtx, { force: true });
+    return html;
+  }
 
-const indexHtml = `<!doctype html>
+  if (engine === 'mustache') {
+    if (!engines.mustache) engines.mustache = (await import('mustache')).default;
+    return engines.mustache.render(template, context);
+  }
+
+  if (engine === 'nunjucks') {
+    if (!engines.nunjucks) engines.nunjucks = await import('nunjucks');
+    const { nunjucks } = engines;
+    const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(componentsRoot), { autoescape: true });
+    const rel = toPosix(path.relative(componentsRoot, templatePath));
+    return env.render(rel, context);
+  }
+
+  if (engine === 'liquid') {
+    if (!engines.liquid) {
+      const { Liquid } = await import('liquidjs');
+      engines.liquid = new Liquid({ root: componentsRoot, extname: '.liquid' });
+    }
+    return engines.liquid.renderFile(toPosix(path.relative(componentsRoot, templatePath)), context);
+  }
+
+  if (engine === 'handlebars') {
+    // Use mustache for basic handlebars compatibility
+    if (!engines.mustache) engines.mustache = (await import('mustache')).default;
+    return engines.mustache.render(template, context);
+  }
+
+  // html: pass through as-is
+  return template;
+};
+
+// Wrap rendered body in a minimal HTML page that includes app.css / app.js
+const wrapComponent = (body) => `<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script>(function(){var t=localStorage.getItem('pl-theme');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');})()</script>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+${body}
+<script src="/app.js"></script>
+<script>
+window.addEventListener('message', function(e) {
+  if (e.data && e.data.type === 'pl-theme') {
+    document.documentElement.setAttribute('data-theme', e.data.theme);
+    localStorage.setItem('pl-theme', e.data.theme);
+  }
+});
+</script>
+</body>
+</html>`;
+
+// ─── Discovery ────────────────────────────────────────────────────────────────
+
+/**
+ * Recursively discover a folder, returning a tree node.
+ * Each folder node collects:
+ *   - children: sub-folder nodes + component nodes
+ *   - _scss / _js: style and script files to bundle
+ */
+const discoverDir = (dir, relPath, parentGlobal) => {
+  if (!fs.existsSync(dir)) return null;
+
+  const folderMeta = readMeta(path.join(dir, '_meta.md'));
+  const folderGlobal = mergeDeep(parentGlobal, readJson(path.join(dir, '_global.json')) ?? {});
+
+  // Scan directory entries
+  const templateFiles = new Map();   // stem → { fullPath, engine }
+  const jsonStems = new Set();       // stems that have a .json file
+  const scssFiles = [];
+  const jsFiles = [];
+  const subDirs = [];
+
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith('_') || entry.name === '.gitkeep') continue;
+    const fullPath = path.join(dir, entry.name);
+    const ext = path.extname(entry.name);
+    const stem = path.basename(entry.name, ext);
+
+    if (entry.isDirectory()) {
+      subDirs.push({ name: entry.name, fullPath });
+      continue;
+    }
+
+    if (TEMPLATE_EXTS.has(ext)) {
+      templateFiles.set(stem, { fullPath, engine: TEMPLATE_EXTS.get(ext) });
+    } else if (ext === '.json') {
+      jsonStems.add(stem);
+    } else if (ext === '.scss') {
+      scssFiles.push(fullPath);
+    } else if (ext === '.js') {
+      jsFiles.push(fullPath);
+    }
+    // .md files alongside components are read on-demand below
+  }
+
+  // Group into base components and variations
+  const bases = new Map(); // baseStem → base info
+
+  for (const [stem, tmpl] of templateFiles) {
+    if (stem.includes('~')) continue; // variation templates handled below
+    const compMeta = readMeta(path.join(dir, `${stem}.md`));
+    bases.set(stem, {
+      templatePath: tmpl.fullPath,
+      engine: tmpl.engine,
+      jsonPath: jsonStems.has(stem) ? path.join(dir, `${stem}.json`) : null,
+      meta: compMeta,
+      variations: new Map(),
+    });
+  }
+
+  // Attach variation templates
+  for (const [stem, tmpl] of templateFiles) {
+    if (!stem.includes('~')) continue;
+    const tilde = stem.indexOf('~');
+    const baseStem = stem.slice(0, tilde);
+    const varName = stem.slice(tilde + 1);
+    if (!bases.has(baseStem)) continue;
+    bases.get(baseStem).variations.set(varName, {
+      templatePath: tmpl.fullPath,
+      engine: tmpl.engine,
+      jsonPath: jsonStems.has(stem) ? path.join(dir, `${stem}.json`) : null,
+    });
+  }
+
+  // Attach JSON-only variations (no matching variation template)
+  for (const stem of jsonStems) {
+    if (!stem.includes('~')) continue;
+    const tilde = stem.indexOf('~');
+    const baseStem = stem.slice(0, tilde);
+    const varName = stem.slice(tilde + 1);
+    if (!bases.has(baseStem)) continue;
+    if (bases.get(baseStem).variations.has(varName)) continue; // already has template
+    const base = bases.get(baseStem);
+    base.variations.set(varName, {
+      templatePath: base.templatePath,
+      engine: base.engine,
+      jsonPath: path.join(dir, `${stem}.json`),
+    });
+  }
+
+  // Build component nodes
+  const componentNodes = [];
+  for (const [stem, base] of bases) {
+    if (base.meta.hidden) continue;
+    const compId = relPath ? `${relPath}/${stem}` : stem;
+    const outBase = toPosix(path.join('components', relPath || '', stem));
+
+    const varNodes = [];
+    for (const [varName, varData] of base.variations) {
+      const varId = `${compId}~${varName}`;
+      const varOut = `${outBase}~${varName}.html`;
+      varNodes.push({
+        type: 'variation',
+        id: varId,
+        label: toLabel(varName),
+        outputPath: varOut,
+        _render: {
+          templatePath: varData.templatePath,
+          engine: varData.engine,
+          baseJsonPath: base.jsonPath,
+          varJsonPath: varData.jsonPath,
+          globalData: folderGlobal,
+        },
+      });
+    }
+
+    componentNodes.push({
+      type: 'component',
+      id: compId,
+      label: base.meta.title ?? toLabel(stem),
+      order: base.meta.order ?? 999,
+      hidden: false,
+      outputPath: `${outBase}.html`,
+      variations: varNodes,
+      _render: {
+        templatePath: base.templatePath,
+        engine: base.engine,
+        baseJsonPath: base.jsonPath,
+        varJsonPath: null,
+        globalData: folderGlobal,
+      },
+    });
+  }
+
+  // Build sub-folder nodes
+  const folderNodes = [];
+  for (const { name, fullPath } of subDirs) {
+    const childRel = relPath ? `${relPath}/${name}` : name;
+    const child = discoverDir(fullPath, childRel, folderGlobal);
+    if (child && !child.hidden && child.children.length > 0) folderNodes.push(child);
+  }
+
+  // Sort components: by order then alphabetically
+  componentNodes.sort((a, b) => {
+    if (a.order !== b.order) return a.order - b.order;
+    return a.label.localeCompare(b.label);
+  });
+  folderNodes.sort((a, b) => {
+    if (a.order !== b.order) return a.order - b.order;
+    return a.label.localeCompare(b.label);
+  });
+
+  return {
+    type: 'folder',
+    id: relPath || '__root__',
+    label: folderMeta.title ?? toLabel(path.basename(dir)),
+    order: folderMeta.order ?? 999,
+    hidden: folderMeta.hidden ?? false,
+    folderPath: relPath || '',
+    children: [...folderNodes, ...componentNodes],
+    _scss: scssFiles,
+    _js: jsFiles,
+  };
+};
+
+// ─── Flatten helpers ──────────────────────────────────────────────────────────
+
+const flattenRenderables = (node) => {
+  const out = [];
+  if (node.type === 'component') {
+    out.push(node);
+    for (const v of node.variations ?? []) out.push(v);
+  } else {
+    for (const child of node.children ?? []) out.push(...flattenRenderables(child));
+  }
+  return out;
+};
+
+const collectStyleAssets = (node, scss = [], js = []) => {
+  if (node._scss) scss.push(...node._scss);
+  if (node._js) js.push(...node._js);
+  for (const child of node.children ?? []) collectStyleAssets(child, scss, js);
+  return { scss, js };
+};
+
+// ─── SCSS / JS pipeline ───────────────────────────────────────────────────────
+
+const buildCss = async (scssFiles) => {
+  if (scssFiles.length === 0) return '';
+  const combined = scssFiles.map((f) => `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, 'utf8')}`).join('\n\n');
+  try {
+    const sass = await import('sass');
+    const result = sass.compileString(combined, {
+      loadPaths: [componentsRoot],
+      style: 'expanded',
+    });
+    return result.css;
+  } catch {
+    return combined; // fallback: return raw SCSS/CSS concatenation
+  }
+};
+
+const buildJs = (jsFiles) =>
+  jsFiles.length === 0 ? '' :
+  jsFiles.map((f) => `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, 'utf8')}`).join('\n\n');
+
+// ─── Strip internal _* fields before serialising ──────────────────────────────
+
+const stripPrivate = (node) => {
+  const { _render, _scss, _js, ...rest } = node;
+  if (rest.children) rest.children = rest.children.map(stripPrivate);
+  if (rest.variations) rest.variations = rest.variations.map(stripPrivate);
+  return rest;
+};
+
+// ─── Render a single component or variation ────────────────────────────────────
+
+const renderItem = async (item) => {
+  const { templatePath, engine, baseJsonPath, varJsonPath, globalData } = item._render;
+  const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
+  const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
+  const context = mergeDeep(globalData, baseData, varData);
+  const body = await renderTemplate(templatePath, engine, context);
+  return wrapComponent(body);
+};
+
+// ─── UI HTML ─────────────────────────────────────────────────────────────────
+
+const buildIndexHtml = (publicTree, totalCount) => {
+  const safeTree = JSON.stringify(publicTree).replace(/<\//g, '<\\/');
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pattern Lab</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('pl-theme');
+      if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))
+        document.documentElement.setAttribute('data-theme','dark');
+    })();
+  </script>
   <style>
-    :root { color-scheme: light dark; }
-    body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; display: grid; grid-template-columns: 360px 1fr; min-height: 100vh; }
-    aside { border-right: 1px solid #8884; padding: 1rem; overflow: auto; }
-    h1 { margin-top: 0; font-size: 1.2rem; }
-    ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
-    button { width: 100%; text-align: left; border: 1px solid #8884; background: transparent; padding: 0.5rem; border-radius: 0.4rem; cursor: pointer; }
-    main { padding: 1rem; }
-    iframe { width: 100%; height: calc(100vh - 2rem); border: 1px solid #8884; border-radius: 0.4rem; background: white; }
+    /* ── Variables ───────────────────────── */
+    :root {
+      --bg:#ffffff; --surface:#f4f4f5; --surface2:#e4e4e7;
+      --border:rgba(0,0,0,.10); --text:#18181b; --text-muted:#71717a;
+      --accent:#2563eb; --accent-fg:#ffffff;
+      --sidebar-w:268px; --header-h:48px; --radius:6px;
+      --font:ui-sans-serif,system-ui,-apple-system,sans-serif;
+    }
+    [data-theme="dark"] {
+      --bg:#09090b; --surface:#18181b; --surface2:#27272a;
+      --border:rgba(255,255,255,.08); --text:#fafafa; --text-muted:#a1a1aa;
+      --accent:#60a5fa; --accent-fg:#0c1929;
+    }
+    /* ── Reset ───────────────────────────── */
+    *,*::before,*::after{box-sizing:border-box}
+    body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);
+      display:grid;grid-template-rows:var(--header-h) 1fr;
+      grid-template-columns:var(--sidebar-w) 1fr;height:100vh;overflow:hidden}
+    button{font-family:var(--font);cursor:pointer}
+    /* ── Header ───────────────────────────── */
+    header{grid-column:1/-1;display:flex;align-items:center;gap:.75rem;
+      padding:0 1rem;background:var(--surface);border-bottom:1px solid var(--border);z-index:10}
+    header h1{margin:0;font-size:.95rem;font-weight:700;letter-spacing:-.01em}
+    .count{font-size:.78rem;color:var(--text-muted)}
+    .spacer{flex:1}
+    /* ── Sidebar ─────────────────────────── */
+    aside{overflow-y:auto;border-right:1px solid var(--border);
+      background:var(--surface);padding:.375rem 0}
+    /* ── Tree ────────────────────────────── */
+    .tree{list-style:none;margin:0;padding:0}
+    .tree-btn{display:flex;align-items:center;gap:.35rem;width:100%;text-align:left;
+      background:none;border:none;padding:.28rem .75rem;font-family:var(--font);
+      font-size:.8rem;color:var(--text);transition:background .1s}
+    .tree-btn:hover{background:var(--surface2)}
+    .tree-btn.active{background:var(--accent);color:var(--accent-fg)}
+    .tree-btn .icon{flex-shrink:0;width:1em;text-align:center;opacity:.5;font-size:.65em;transition:opacity .15s}
+    .tree-btn:hover .icon,.tree-btn.active .icon{opacity:1}
+    .tree-btn .lbl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+    .tree-folder>.tree-btn{font-weight:600;font-size:.72rem;text-transform:uppercase;
+      letter-spacing:.05em;color:var(--text-muted)}
+    .tree-folder>.tree-btn:hover{color:var(--text)}
+    .tree-folder>.tree-btn.active{color:var(--accent-fg)}
+    .tree-children{display:none;padding-left:.5rem;border-left:1px solid var(--border);margin-left:1.1rem}
+    .tree-item.open>.tree-children{display:block}
+    .tree-variation>.tree-btn{font-size:.75rem;color:var(--text-muted);font-style:italic}
+    .tree-variation>.tree-btn.active{color:var(--accent-fg);font-style:normal}
+    /* ── Main ────────────────────────────── */
+    main{overflow:hidden;display:flex;flex-direction:column}
+    .main-toolbar{display:flex;align-items:center;gap:.5rem;padding:.3rem .75rem;
+      border-bottom:1px solid var(--border);min-height:36px;font-size:.8rem}
+    .breadcrumb{color:var(--text);font-weight:500}
+    .main-content{flex:1;overflow:auto;position:relative}
+    #preview-frame{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+    /* ── Folder view ─────────────────────── */
+    #folder-view{padding:1rem;display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
+    .ccard{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+    .ccard-hd{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;
+      border-bottom:1px solid var(--border);font-size:.78rem;font-weight:500}
+    .ccard-hd .open-btn{margin-left:auto;font-size:.7rem;background:var(--accent);color:var(--accent-fg);
+      border:none;border-radius:4px;padding:.15rem .45rem;cursor:pointer}
+    .ccard-vars{display:flex;gap:.25rem;flex-wrap:wrap;padding:.25rem .75rem;
+      border-bottom:1px solid var(--border)}
+    .var-btn{font-size:.7rem;background:var(--surface2);color:var(--text-muted);
+      border:1px solid var(--border);border-radius:4px;padding:.1rem .4rem;cursor:pointer;font-family:var(--font)}
+    .var-btn:hover{color:var(--text)}
+    .ccard iframe{width:100%;height:180px;border:none;display:block}
+    /* ── Utility buttons ─────────────────── */
+    .icon-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);
+      padding:.25rem .55rem;color:var(--text);font-size:.78rem;transition:background .1s}
+    .icon-btn:hover{background:var(--surface2)}
+    .empty{display:flex;align-items:center;justify-content:center;height:100%;
+      color:var(--text-muted);font-size:.9rem}
   </style>
 </head>
 <body>
-  <aside>
-    <h1>Pattern Lab Components</h1>
-    <p>Atomic + custom folders rendered from Twig via PHP.</p>
-    <ul>${componentLinks}</ul>
-  </aside>
-  <main>
-    <iframe id="preview" title="Component preview"></iframe>
-  </main>
-  <script>
-    const preview = document.getElementById('preview');
-    const buttons = [...document.querySelectorAll('button[data-component]')];
-    const openComponent = (target) => {
-      preview.src = target;
-      history.replaceState({}, '', '?component=' + encodeURIComponent(target));
-    };
-    buttons.forEach((button) => {
-      button.addEventListener('click', () => openComponent(button.dataset.component));
-    });
-    const initial = new URLSearchParams(window.location.search).get('component');
-    const fallback = buttons[0]?.dataset.component;
-    if (initial) {
-      openComponent(initial);
-    } else if (fallback) {
-      openComponent(fallback);
+
+<header>
+  <h1>Pattern Lab</h1>
+  <span class="count">${totalCount} component${totalCount !== 1 ? 's' : ''}</span>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="theme-btn" aria-label="Toggle dark mode">🌙 Dark</button>
+</header>
+
+<aside>
+  <nav aria-label="Components">
+    <ul class="tree" id="tree-root"></ul>
+  </nav>
+</aside>
+
+<main>
+  <div class="main-toolbar">
+    <span id="breadcrumb" class="breadcrumb"></span>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="full-btn" style="display:none" title="Open in new tab">↗ Full</button>
+  </div>
+  <div class="main-content">
+    <iframe id="preview-frame" title="Component preview" style="display:none"></iframe>
+    <div id="folder-view" style="display:none"></div>
+    <div class="empty" id="empty-msg">← Select a component or folder</div>
+  </div>
+</main>
+
+<script>
+'use strict';
+const TREE = ${safeTree};
+
+/* ── Theme ────────────────────────────────────────────── */
+const applyTheme = (theme) => {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('pl-theme', theme);
+  document.getElementById('theme-btn').textContent = theme === 'dark' ? '☀ Light' : '🌙 Dark';
+  // Push theme to all visible iframes
+  document.querySelectorAll('iframe').forEach(f => {
+    try { f.contentWindow.postMessage({ type: 'pl-theme', theme }, '*'); } catch {}
+  });
+};
+document.getElementById('theme-btn').addEventListener('click', () => {
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+// Init button label
+applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
+
+/* ── Helpers ──────────────────────────────────────────── */
+const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const $ = id => document.getElementById(id);
+
+/* ── View management ─────────────────────────────────── */
+let activeId = null;
+const nodeMap = new Map(); // id → { node, btnEl }
+
+const showEmpty = () => {
+  $('preview-frame').style.display = 'none';
+  $('folder-view').style.display = 'none';
+  $('empty-msg').style.display = '';
+  $('full-btn').style.display = 'none';
+  $('breadcrumb').textContent = '';
+  activeId = null; refreshActive();
+};
+
+const showComponent = (id, outputPath, label) => {
+  activeId = id;
+  $('preview-frame').style.display = '';
+  $('preview-frame').src = '/' + outputPath;
+  $('folder-view').style.display = 'none';
+  $('empty-msg').style.display = 'none';
+  $('breadcrumb').textContent = label;
+  $('full-btn').style.display = '';
+  $('full-btn').onclick = () => window.open('/' + outputPath, '_blank');
+  history.replaceState({}, '', '?id=' + encodeURIComponent(id));
+  refreshActive();
+  // Sync theme to new iframe once loaded
+  $('preview-frame').onload = () => {
+    try { $('preview-frame').contentWindow.postMessage({ type: 'pl-theme', theme: localStorage.getItem('pl-theme') || 'light' }, '*'); } catch {}
+  };
+};
+
+const flattenComponents = (node) => {
+  const out = [];
+  if (node.type === 'component') { out.push(node); return out; }
+  for (const child of (node.children || [])) out.push(...flattenComponents(child));
+  return out;
+};
+
+const showFolder = (node) => {
+  activeId = node.id;
+  $('preview-frame').style.display = 'none';
+  $('empty-msg').style.display = 'none';
+  $('full-btn').style.display = 'none';
+  $('breadcrumb').textContent = node.label;
+  history.replaceState({}, '', '?id=' + encodeURIComponent(node.id));
+
+  const comps = flattenComponents(node);
+  const fv = $('folder-view');
+  fv.style.display = '';
+  fv.innerHTML = comps.map(c => {
+    const varBtns = (c.variations || []).map(v =>
+      '<button class="var-btn" data-act="comp" data-id="' + escHtml(v.id) + '" data-path="' + escHtml(v.outputPath) + '" data-label="' + escHtml(v.label) + '">' + escHtml(v.label) + '</button>'
+    ).join('');
+    return '<div class="ccard">'
+      + '<div class="ccard-hd">' + escHtml(c.label)
+      + '<button class="open-btn" data-act="comp" data-id="' + escHtml(c.id) + '" data-path="' + escHtml(c.outputPath) + '" data-label="' + escHtml(c.label) + '">Open</button></div>'
+      + (varBtns ? '<div class="ccard-vars">' + varBtns + '</div>' : '')
+      + '<iframe src="/' + escHtml(c.outputPath) + '" loading="lazy" title="' + escHtml(c.label) + '"></iframe>'
+      + '</div>';
+  }).join('') || '<p style="color:var(--text-muted);grid-column:1/-1">No components in this folder.</p>';
+
+  refreshActive();
+};
+
+/* ── Tree building ───────────────────────────────────── */
+const refreshActive = () => {
+  for (const [id, { btnEl }] of nodeMap) btnEl.classList.toggle('active', id === activeId);
+};
+
+const buildTree = (nodes, ulEl, depth) => {
+  for (const node of nodes) {
+    if (node.hidden) continue;
+    const li = document.createElement('li');
+    li.className = 'tree-item ' + (node.type === 'folder' ? 'tree-folder' : node.type === 'variation' ? 'tree-variation' : 'tree-component');
+
+    const btn = document.createElement('button');
+    btn.className = 'tree-btn';
+    btn.style.paddingLeft = (.75 + depth * .65) + 'rem';
+
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    const lbl = document.createElement('span');
+    lbl.className = 'lbl';
+    lbl.textContent = node.label;
+    btn.append(icon, lbl);
+    li.appendChild(btn);
+
+    nodeMap.set(node.id, { node, btnEl: btn });
+
+    const hasChildren = (node.type === 'folder' && (node.children || []).length > 0)
+      || (node.type === 'component' && (node.variations || []).length > 0);
+
+    if (hasChildren) {
+      icon.textContent = '▶';
+      const childUl = document.createElement('ul');
+      childUl.className = 'tree tree-children';
+      li.appendChild(childUl);
+      const childNodes = node.type === 'folder' ? (node.children || []) : (node.variations || []);
+      buildTree(childNodes, childUl, depth + 1);
+
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const open = li.classList.toggle('open');
+        icon.textContent = open ? '▼' : '▶';
+        if (node.type === 'folder') showFolder(node);
+        else showComponent(node.id, node.outputPath, node.label);
+      });
+    } else {
+      icon.textContent = node.type === 'variation' ? '◦' : '○';
+      btn.addEventListener('click', () => {
+        if (node.type === 'folder') showFolder(node);
+        else showComponent(node.id, node.outputPath, node.label);
+      });
     }
-  </script>
+
+    ulEl.appendChild(li);
+  }
+};
+
+buildTree(TREE.children || [], $('tree-root'), 0);
+
+/* ── Folder-view card clicks ─────────────────────────── */
+$('folder-view').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  if (btn.dataset.act === 'comp') showComponent(btn.dataset.id, btn.dataset.path, btn.dataset.label);
+});
+
+/* ── URL restore ─────────────────────────────────────── */
+const restoreId = new URLSearchParams(location.search).get('id');
+if (restoreId && nodeMap.has(restoreId)) {
+  const { node } = nodeMap.get(restoreId);
+  if (node.type === 'folder') showFolder(node);
+  else showComponent(node.id, node.outputPath, node.label);
+} else {
+  const first = flattenComponents(TREE)[0];
+  if (first) showComponent(first.id, first.outputPath, first.label);
+}
+</script>
 </body>
-</html>
-`;
+</html>`;
+};
 
-writeFile(path.join(distRoot, 'index.html'), indexHtml);
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
-console.log(`Rendered ${components.length} component(s) into ${distRoot}`);
+const main = async () => {
+  // Clean dist
+  fs.rmSync(distRoot, { recursive: true, force: true });
+  fs.mkdirSync(distRoot, { recursive: true });
+
+  // Load global data from src/_global.json
+  const globalData = readJson(path.join(srcRoot, '_global.json')) ?? {};
+
+  // Discover component tree
+  const tree = discoverDir(componentsRoot, '', globalData);
+  if (!tree) {
+    console.error('No components found under src/components/');
+    process.exit(1);
+  }
+
+  // Collect SCSS/JS paths
+  const { scss: scssFiles, js: jsFiles } = collectStyleAssets(tree);
+
+  // Render all components/variations
+  const renderables = flattenRenderables(tree);
+  for (const item of renderables) {
+    const html = await renderItem(item);
+    const outPath = path.join(distRoot, ...item.outputPath.split('/'));
+    writeFile(outPath, html);
+  }
+
+  // SCSS → app.css
+  const css = await buildCss(scssFiles);
+  writeFile(path.join(distRoot, 'app.css'), css || '/* no component styles */\n');
+
+  // JS → app.js
+  const js = buildJs(jsFiles);
+  writeFile(path.join(distRoot, 'app.js'), js || '/* no component scripts */\n');
+
+  // Copy assets
+  copyDir(assetsRoot, path.join(distRoot, 'assets'));
+
+  // Write tree manifest
+  const publicTree = stripPrivate(tree);
+  writeFile(path.join(distRoot, 'tree.json'), JSON.stringify(publicTree, null, 2) + '\n');
+
+  // Write flat component manifest (for external tooling)
+  const manifest = renderables.map(({ id, label, type, outputPath }) => ({ id, label, type, outputPath }));
+  writeFile(path.join(distRoot, 'components.json'), JSON.stringify(manifest, null, 2) + '\n');
+
+  // Build index.html
+  writeFile(path.join(distRoot, 'index.html'), buildIndexHtml(publicTree, renderables.length));
+
+  console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
+};
+
+main().catch((err) => { console.error(err); process.exit(1); });

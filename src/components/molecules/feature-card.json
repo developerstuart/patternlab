@@ -1,0 +1,7 @@
+{
+  "title": "Modern Pattern Lab",
+  "summary": "Node runtime with PHP Twig rendering. Supports any folder structure, variations, and multiple template engines.",
+  "label": "Learn more",
+  "variant": "primary",
+  "type": "button"
+}
