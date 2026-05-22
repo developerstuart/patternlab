@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { contentType, isTemplateExt, loadLiveReloadSnippet } from './lib/serve-utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,49 +15,7 @@ const distRoot = path.join(repoRoot, 'dist');
 const buildScript = path.join(repoRoot, 'scripts', 'build.mjs');
 const port = Number(process.env.PORT || 3000);
 const watchMode = process.argv.includes('--watch');
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.ico': 'image/x-icon',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-  '.ttf': 'font/ttf',
-  '.otf': 'font/otf',
-  '.eot': 'application/vnd.ms-fontobject',
-  '.mp4': 'video/mp4',
-  '.webm': 'video/webm',
-  '.pdf': 'application/pdf',
-};
-
-const LIVE_RELOAD_SNIPPET = `
-<script>
-(function(){
-  if (!window.EventSource) return;
-  var es = new EventSource('/__live');
-  es.onmessage = function(ev){
-    try {
-      var payload = JSON.parse(ev.data);
-      if (payload && payload.type === 'reload') location.reload();
-    } catch {}
-  };
-})();
-</script>`;
-const TEMPLATE_EXTS = new Set(['.twig', '.mustache', '.njk', '.liquid', '.hbs', '.html']);
-
-const contentType = (filePath) => {
-  const ext = filePath.slice(filePath.lastIndexOf('.'));
-  return MIME[ext] ?? 'application/octet-stream';
-};
+const LIVE_RELOAD_SNIPPET = loadLiveReloadSnippet(repoRoot);
 
 const runBuild = (args = []) => new Promise((resolve, reject) => {
   execFile('node', [buildScript, ...args], { cwd: repoRoot }, (error, stdout, stderr) => {
@@ -68,7 +27,6 @@ const runBuild = (args = []) => new Promise((resolve, reject) => {
 });
 
 const toPosix = (v) => v.split(path.sep).join('/');
-const isTemplateExt = (ext) => TEMPLATE_EXTS.has(ext);
 
 const clients = new Set();
 const broadcastReload = () => {
@@ -147,7 +105,11 @@ const classifyChange = ({ eventType, changedPath }) => {
   const ext = path.extname(abs);
   const exists = fs.existsSync(abs);
 
-  if (relSrc === '_global.json' || relSrc === '_component-head.html') return { action: 'full' };
+  if (
+    relSrc === '_global.json'
+    || relSrc === '_component-head.html'
+    || relSrc.startsWith('data/')
+  ) return { action: 'full' };
 
   if (abs.startsWith(componentsRoot)) {
     if (baseName === '_global.json' || baseName === '_meta.md' || baseName.endsWith('.md')) return { action: 'full' };

@@ -2,6 +2,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPatternlabConfig } from "./lib/config.mjs";
+import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -13,6 +15,8 @@ const componentsRoot = path.join(srcRoot, "components");
 const assetsRoot = path.join(srcRoot, "assets");
 const distRoot = path.join(repoRoot, "dist");
 const phpRenderer = path.join(repoRoot, "php", "render.php");
+const templatesRoot = path.join(repoRoot, "scripts", "templates");
+const patternlabConfig = loadPatternlabConfig(repoRoot);
 
 const argv = process.argv.slice(2);
 const getArgValue = (name) => {
@@ -93,30 +97,14 @@ const readText = (filePath) => {
   return fs.readFileSync(filePath, "utf8");
 };
 
-const mergeDeep = (...objs) => {
-  const result = {};
-  for (const obj of objs) {
-    if (!obj || typeof obj !== "object") continue;
-    for (const [k, v] of Object.entries(obj)) {
-      if (
-        v !== null &&
-        typeof v === "object" &&
-        !Array.isArray(v) &&
-        typeof result[k] === "object" &&
-        result[k] !== null &&
-        !Array.isArray(result[k])
-      ) {
-        result[k] = mergeDeep(result[k], v);
-      } else {
-        result[k] = v;
-      }
-    }
-  }
-  return result;
-};
-
 const toLabel = (stem) =>
   stem.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const escHtml = (value) =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 // ─── Rendering engines ────────────────────────────────────────────────────────
 
@@ -434,9 +422,9 @@ const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
 
 // ─── SCSS / JS pipeline ───────────────────────────────────────────────────────
 
-const buildCss = async (scssFiles) => {
-  if (scssFiles.length === 0) return "";
-  const combined = scssFiles
+const buildCss = async (styleFiles, loadPaths = []) => {
+  if (styleFiles.length === 0) return "";
+  const combined = styleFiles
     .map(
       (f) =>
         `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
@@ -452,9 +440,13 @@ const buildCss = async (scssFiles) => {
       throw new Error("Sass compiler API not found");
     }
 
-    const compiled = scssFiles.map((filePath) => {
+    const compiled = styleFiles.map((filePath) => {
+      const ext = path.extname(filePath);
+      if (ext === ".css") {
+        return `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${fs.readFileSync(filePath, "utf8")}`;
+      }
       const result = sass.compile(filePath, {
-        loadPaths: [componentsRoot, srcRoot],
+        loadPaths: [componentsRoot, srcRoot, ...loadPaths],
         style: "expanded",
       });
       return `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${result.css}`;
@@ -501,398 +493,33 @@ const renderItem = async (item, componentHeadExtra) => {
 
 // ─── UI HTML ─────────────────────────────────────────────────────────────────
 
+const readTemplate = (name) =>
+  fs.readFileSync(path.join(templatesRoot, name), "utf8");
+
 const buildIndexHtml = (publicTree, totalCount) => {
   const safeTree = JSON.stringify(publicTree).replace(/<\//g, "<\\/");
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pattern Lab</title>
-  <script>
-    (function(){
-      var t=localStorage.getItem('pl-theme');
-      if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))
-        document.documentElement.setAttribute('data-theme','dark');
-    })();
-  </script>
-  <style>
-    /* ── Variables ───────────────────────── */
-    :root {
-      --bg:#ffffff; --surface:#f4f4f5; --surface2:#e4e4e7;
-      --border:rgba(0,0,0,.10); --text:#18181b; --text-muted:#71717a;
-      --accent:#2563eb; --accent-fg:#ffffff;
-      --sidebar-w:268px; --header-h:48px; --radius:6px;
-      --font:ui-sans-serif,system-ui,-apple-system,sans-serif;
-    }
-    [data-theme="dark"] {
-      --bg:#09090b; --surface:#18181b; --surface2:#27272a;
-      --border:rgba(255,255,255,.08); --text:#fafafa; --text-muted:#a1a1aa;
-      --accent:#60a5fa; --accent-fg:#0c1929;
-    }
-    /* ── Reset ───────────────────────────── */
-    *,*::before,*::after{box-sizing:border-box}
-    body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);
-      display:grid;grid-template-rows:var(--header-h) 1fr;
-      grid-template-columns:var(--sidebar-w) 1fr;height:100vh;overflow:hidden}
-    button{font-family:var(--font);cursor:pointer}
-    /* ── Header ───────────────────────────── */
-    header{grid-column:1/-1;display:flex;align-items:center;gap:.75rem;
-      padding:0 1rem;background:var(--surface);border-bottom:1px solid var(--border);z-index:10}
-    header h1{margin:0;font-size:.95rem;font-weight:700;letter-spacing:-.01em}
-    .count{font-size:.78rem;color:var(--text-muted)}
-    .spacer{flex:1}
-    /* ── Sidebar ─────────────────────────── */
-    aside{overflow-y:auto;border-right:1px solid var(--border);
-      background:var(--surface);padding:.375rem 0}
-    /* ── Tree ────────────────────────────── */
-    .tree{list-style:none;margin:0;padding:0}
-    .tree-btn{display:flex;align-items:center;gap:.35rem;width:100%;text-align:left;
-      background:none;border:none;padding:.28rem .75rem;font-family:var(--font);
-      font-size:.8rem;color:var(--text);transition:background .1s}
-    .tree-btn:hover{background:var(--surface2)}
-    .tree-btn.active{background:var(--accent);color:var(--accent-fg)}
-    .tree-btn .icon{flex-shrink:0;width:1em;text-align:center;opacity:.5;font-size:.65em;transition:opacity .15s}
-    .tree-btn:hover .icon,.tree-btn.active .icon{opacity:1}
-    .tree-btn .lbl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-    .tree-folder>.tree-btn{font-weight:600;font-size:.72rem;text-transform:uppercase;
-      letter-spacing:.05em;color:var(--text-muted)}
-    .tree-folder>.tree-btn:hover{color:var(--text)}
-    .tree-folder>.tree-btn.active{color:var(--accent-fg)}
-    .tree-children{display:none;padding-left:.5rem;border-left:1px solid var(--border);margin-left:1.1rem}
-    .tree-item.open>.tree-children{display:block}
-    .tree-variation>.tree-btn{font-size:.75rem;color:var(--text-muted);font-style:italic}
-    .tree-variation>.tree-btn.active{color:var(--accent-fg);font-style:normal}
-    /* ── Main ────────────────────────────── */
-    main{overflow:hidden;display:flex;flex-direction:column}
-    .main-toolbar{display:flex;align-items:center;gap:.5rem;padding:.3rem .75rem;
-      border-bottom:1px solid var(--border);min-height:36px;font-size:.8rem;flex-wrap:wrap}
-    .breadcrumb{color:var(--text);font-weight:500}
-    .main-content{flex:1;overflow:auto;position:relative}
-    #preview-host{width:100%;height:100%;padding:.75rem;display:flex;align-items:flex-start;justify-content:center;overflow:auto}
-    #preview-shell{position:relative;width:100%;height:100%;min-width:280px;min-height:220px;max-width:100%;max-height:100%;
-      border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg)}
-    #preview-frame{width:100%;height:100%;border:none;display:block;background:var(--bg)}
-    .resize-handle{position:absolute;z-index:2;background:transparent}
-    .handle-right{top:0;right:0;width:8px;height:100%;cursor:ew-resize}
-    .handle-bottom{left:0;bottom:0;width:100%;height:8px;cursor:ns-resize}
-    .handle-corner{right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize}
-    .viewport-tools{display:flex;align-items:center;gap:.25rem}
-    .size-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);
-      padding:.2rem .5rem;color:var(--text);font-size:.75rem}
-    .size-btn:hover{background:var(--surface2)}
-    .size-btn.active{background:var(--accent);color:var(--accent-fg);border-color:transparent}
-    /* ── Folder view ─────────────────────── */
-    #folder-view{padding:1rem;display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
-    .ccard{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
-    .ccard-hd{display:flex;align-items:center;gap:.5rem;padding:.35rem .75rem;
-      border-bottom:1px solid var(--border);font-size:.78rem;font-weight:500}
-    .ccard-hd .open-btn{margin-left:auto;font-size:.7rem;background:var(--accent);color:var(--accent-fg);
-      border:none;border-radius:4px;padding:.15rem .45rem;cursor:pointer}
-    .ccard-vars{display:flex;gap:.25rem;flex-wrap:wrap;padding:.25rem .75rem;
-      border-bottom:1px solid var(--border)}
-    .var-btn{font-size:.7rem;background:var(--surface2);color:var(--text-muted);
-      border:1px solid var(--border);border-radius:4px;padding:.1rem .4rem;cursor:pointer;font-family:var(--font)}
-    .var-btn:hover{color:var(--text)}
-    .ccard iframe{width:100%;height:180px;border:none;display:block}
-    /* ── Utility buttons ─────────────────── */
-    .icon-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);
-      padding:.25rem .55rem;color:var(--text);font-size:.78rem;transition:background .1s}
-    .icon-btn:hover{background:var(--surface2)}
-    .empty{display:flex;align-items:center;justify-content:center;height:100%;
-      color:var(--text-muted);font-size:.9rem}
-  </style>
-</head>
-<body>
-
-<header>
-  <h1>Pattern Lab</h1>
-  <span class="count">${totalCount} component${totalCount !== 1 ? "s" : ""}</span>
-  <div class="spacer"></div>
-  <button class="icon-btn" id="theme-btn" aria-label="Toggle dark mode">🌙 Dark</button>
-</header>
-
-<aside>
-  <nav aria-label="Components">
-    <ul class="tree" id="tree-root"></ul>
-  </nav>
-</aside>
-
-<main>
-  <div class="main-toolbar">
-    <span id="breadcrumb" class="breadcrumb"></span>
-    <div class="spacer"></div>
-    <div class="viewport-tools" id="viewport-tools" style="display:none">
-      <button class="size-btn" data-size="full">Full</button>
-      <button class="size-btn" data-size="desktop">Desktop</button>
-      <button class="size-btn" data-size="tablet">Tablet</button>
-      <button class="size-btn" data-size="mobile">Mobile</button>
-    </div>
-    <button class="icon-btn" id="full-btn" style="display:none" title="Open in new tab">↗ Full</button>
-  </div>
-  <div class="main-content">
-    <div id="preview-host" style="display:none">
-      <div id="preview-shell">
-        <iframe id="preview-frame" title="Component preview"></iframe>
-        <div class="resize-handle handle-right" data-resize="right" aria-hidden="true"></div>
-        <div class="resize-handle handle-bottom" data-resize="bottom" aria-hidden="true"></div>
-        <div class="resize-handle handle-corner" data-resize="corner" aria-hidden="true"></div>
-      </div>
-    </div>
-    <div id="folder-view" style="display:none"></div>
-    <div class="empty" id="empty-msg">← Select a component or folder</div>
-  </div>
-</main>
-
-<script>
-'use strict';
-const TREE = ${safeTree};
-
-/* ── Theme ────────────────────────────────────────────── */
-const applyTheme = (theme) => {
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('pl-theme', theme);
-  document.getElementById('theme-btn').textContent = theme === 'dark' ? '☀ Light' : '🌙 Dark';
-  // Push theme to all visible iframes
-  document.querySelectorAll('iframe').forEach(f => {
-    try { f.contentWindow.postMessage({ type: 'pl-theme', theme }, '*'); } catch {}
-  });
-};
-document.getElementById('theme-btn').addEventListener('click', () => {
-  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-});
-// Init button label
-applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
-
-/* ── Helpers ──────────────────────────────────────────── */
-const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-const $ = id => document.getElementById(id);
-const VIEWPORT_WIDTHS = { full: null, desktop: 1440, tablet: 768, mobile: 375 };
-
-/* ── View management ─────────────────────────────────── */
-let activeId = null;
-const nodeMap = new Map(); // id → { node, btnEl }
-let activeViewport = 'full';
-
-const setViewportPreset = (size) => {
-  activeViewport = VIEWPORT_WIDTHS[size] === undefined ? 'full' : size;
-  const shell = $('preview-shell');
-  const host = $('preview-host');
-  const maxW = Math.max(280, host.clientWidth - 16);
-  const maxH = Math.max(220, host.clientHeight - 16);
-  const width = VIEWPORT_WIDTHS[activeViewport];
-  shell.style.width = width == null ? '100%' : Math.min(width, maxW) + 'px';
-  shell.style.height = '100%';
-  shell.style.maxWidth = '100%';
-  shell.style.maxHeight = '100%';
-  shell.dataset.size = activeViewport;
-  document.querySelectorAll('[data-size]').forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.size === activeViewport);
-  });
-};
-
-const setupViewportResizing = () => {
-  const shell = $('preview-shell');
-  const host = $('preview-host');
-  let drag = null;
-
-  const onMove = (e) => {
-    if (!drag) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    const maxW = Math.max(280, host.clientWidth - 16);
-    const maxH = Math.max(220, host.clientHeight - 16);
-    if (drag.mode === 'right' || drag.mode === 'corner') {
-      const nextW = Math.min(maxW, Math.max(280, drag.startWidth + dx));
-      shell.style.width = nextW + 'px';
-    }
-    if (drag.mode === 'bottom' || drag.mode === 'corner') {
-      const nextH = Math.min(maxH, Math.max(220, drag.startHeight + dy));
-      shell.style.height = nextH + 'px';
-    }
-    activeViewport = 'custom';
-    document.querySelectorAll('[data-size]').forEach((btn) => btn.classList.remove('active'));
-  };
-
-  const onUp = () => {
-    if (!drag) return;
-    drag = null;
-    window.removeEventListener('pointermove', onMove);
-    window.removeEventListener('pointerup', onUp);
-  };
-
-  $('preview-shell').addEventListener('pointerdown', (e) => {
-    const mode = e.target.getAttribute('data-resize');
-    if (!mode) return;
-    e.preventDefault();
-    drag = {
-      mode,
-      startX: e.clientX,
-      startY: e.clientY,
-      startWidth: shell.getBoundingClientRect().width,
-      startHeight: shell.getBoundingClientRect().height,
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  });
-};
-
-const showEmpty = () => {
-  $('preview-host').style.display = 'none';
-  $('folder-view').style.display = 'none';
-  $('empty-msg').style.display = '';
-  $('full-btn').style.display = 'none';
-  $('viewport-tools').style.display = 'none';
-  $('breadcrumb').textContent = '';
-  activeId = null; refreshActive();
-};
-
-const showComponent = (id, outputPath, label) => {
-  activeId = id;
-  $('preview-host').style.display = '';
-  $('preview-frame').src = '/' + outputPath;
-  $('folder-view').style.display = 'none';
-  $('empty-msg').style.display = 'none';
-  $('breadcrumb').textContent = label;
-  $('full-btn').style.display = '';
-  $('viewport-tools').style.display = '';
-  setViewportPreset(activeViewport === 'custom' ? 'full' : activeViewport);
-  $('full-btn').onclick = () => window.open('/' + outputPath, '_blank');
-  history.replaceState({}, '', '?id=' + encodeURIComponent(id));
-  refreshActive();
-  // Sync theme to new iframe once loaded
-  $('preview-frame').onload = () => {
-    try { $('preview-frame').contentWindow.postMessage({ type: 'pl-theme', theme: localStorage.getItem('pl-theme') || 'light' }, '*'); } catch {}
-  };
-};
-
-const flattenComponents = (node) => {
-  const out = [];
-  if (node.type === 'component') { out.push(node); return out; }
-  for (const child of (node.children || [])) out.push(...flattenComponents(child));
-  return out;
-};
-
-const showFolder = (node) => {
-  activeId = node.id;
-  $('preview-host').style.display = 'none';
-  $('empty-msg').style.display = 'none';
-  $('full-btn').style.display = 'none';
-  $('viewport-tools').style.display = 'none';
-  $('breadcrumb').textContent = node.label;
-  history.replaceState({}, '', '?id=' + encodeURIComponent(node.id));
-
-  const comps = flattenComponents(node);
-  const fv = $('folder-view');
-  fv.style.display = '';
-  fv.innerHTML = comps.map(c => {
-    const varBtns = (c.variations || []).map(v =>
-      '<button class="var-btn" data-act="comp" data-id="' + escHtml(v.id) + '" data-path="' + escHtml(v.outputPath) + '" data-label="' + escHtml(v.label) + '">' + escHtml(v.label) + '</button>'
-    ).join('');
-    return '<div class="ccard">'
-      + '<div class="ccard-hd">' + escHtml(c.label)
-      + '<button class="open-btn" data-act="comp" data-id="' + escHtml(c.id) + '" data-path="' + escHtml(c.outputPath) + '" data-label="' + escHtml(c.label) + '">Open</button></div>'
-      + (varBtns ? '<div class="ccard-vars">' + varBtns + '</div>' : '')
-      + '<iframe src="/' + escHtml(c.outputPath) + '" loading="lazy" title="' + escHtml(c.label) + '"></iframe>'
-      + '</div>';
-  }).join('') || '<p style="color:var(--text-muted);grid-column:1/-1">No components in this folder.</p>';
-
-  refreshActive();
-};
-
-/* ── Tree building ───────────────────────────────────── */
-const refreshActive = () => {
-  for (const [id, { btnEl }] of nodeMap) btnEl.classList.toggle('active', id === activeId);
-};
-
-const buildTree = (nodes, ulEl, depth) => {
-  for (const node of nodes) {
-    if (node.hidden) continue;
-    const li = document.createElement('li');
-    li.className = 'tree-item ' + (node.type === 'folder' ? 'tree-folder' : node.type === 'variation' ? 'tree-variation' : 'tree-component');
-
-    const btn = document.createElement('button');
-    btn.className = 'tree-btn';
-    btn.style.paddingLeft = (.75 + depth * .65) + 'rem';
-
-    const icon = document.createElement('span');
-    icon.className = 'icon';
-    const lbl = document.createElement('span');
-    lbl.className = 'lbl';
-    lbl.textContent = node.label;
-    btn.append(icon, lbl);
-    li.appendChild(btn);
-
-    nodeMap.set(node.id, { node, btnEl: btn });
-
-    const hasChildren = (node.type === 'folder' && (node.children || []).length > 0)
-      || (node.type === 'component' && (node.variations || []).length > 0);
-
-    if (hasChildren) {
-      icon.textContent = '▶';
-      const childUl = document.createElement('ul');
-      childUl.className = 'tree tree-children';
-      li.appendChild(childUl);
-      const childNodes = node.type === 'folder' ? (node.children || []) : (node.variations || []);
-      buildTree(childNodes, childUl, depth + 1);
-
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const open = li.classList.toggle('open');
-        icon.textContent = open ? '▼' : '▶';
-        if (node.type === 'folder') showFolder(node);
-        else showComponent(node.id, node.outputPath, node.label);
-      });
-    } else {
-      icon.textContent = node.type === 'variation' ? '◦' : '○';
-      btn.addEventListener('click', () => {
-        if (node.type === 'folder') showFolder(node);
-        else showComponent(node.id, node.outputPath, node.label);
-      });
-    }
-
-    ulEl.appendChild(li);
-  }
-};
-
-buildTree(TREE.children || [], $('tree-root'), 0);
-setupViewportResizing();
-document.querySelectorAll('#viewport-tools [data-size]').forEach((btn) => {
-  btn.addEventListener('click', () => setViewportPreset(btn.dataset.size));
-});
-window.addEventListener('resize', () => {
-  if ($('preview-host').style.display === 'none') return;
-  if (activeViewport === 'custom') return;
-  setViewportPreset(activeViewport);
-});
-
-/* ── Folder-view card clicks ─────────────────────────── */
-$('folder-view').addEventListener('click', e => {
-  const btn = e.target.closest('[data-act]');
-  if (!btn) return;
-  if (btn.dataset.act === 'comp') showComponent(btn.dataset.id, btn.dataset.path, btn.dataset.label);
-});
-
-/* ── URL restore ─────────────────────────────────────── */
-const restoreId = new URLSearchParams(location.search).get('id');
-if (restoreId && nodeMap.has(restoreId)) {
-  const { node } = nodeMap.get(restoreId);
-  if (node.type === 'folder') showFolder(node);
-  else showComponent(node.id, node.outputPath, node.label);
-} else {
-  const first = flattenComponents(TREE)[0];
-  if (first) showComponent(first.id, first.outputPath, first.label);
-}
-</script>
-</body>
-</html>`;
+  const safeUiConfig = JSON.stringify(patternlabConfig.ui).replace(/<\//g, "<\\/");
+  const indexCss = readTemplate("index.css");
+  const indexJs = readTemplate("index.js")
+    .replace("__TREE_JSON__", safeTree)
+    .replace("__UI_CONFIG__", safeUiConfig);
+  return readTemplate("index.shell.html")
+    .replace(/__PAGE_TITLE__/g, escHtml(patternlabConfig.title))
+    .replace(/__HEADER_TITLE__/g, escHtml(patternlabConfig.title))
+    .replace(
+      /__HEADER_VERSION__/g,
+      escHtml(patternlabConfig.packageVersion ? `v${patternlabConfig.packageVersion}` : ""),
+    )
+    .replace(/__TOTAL_COUNT__/g, String(totalCount))
+    .replace(/__TOTAL_SUFFIX__/g, totalCount !== 1 ? "s" : "")
+    .replace("__INDEX_CSS__", indexCss)
+    .replace("__INDEX_JS__", indexJs);
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const discover = () => {
-  const globalData = readJson(path.join(srcRoot, "_global.json")) ?? {};
+  const globalData = loadRootGlobalData(srcRoot);
   const tree = discoverDir(componentsRoot, "", globalData);
   if (!tree) {
     console.error("No components found under src/components/");
@@ -902,13 +529,23 @@ const discover = () => {
 };
 
 const writeCssJs = async (tree) => {
-  const { scss: scssFiles, js: jsFiles } = collectStyleAssets(tree);
-  const css = await buildCss(scssFiles);
+  const { scss: componentScssFiles, js: componentJsFiles } = collectStyleAssets(tree);
+  const cssFiles = [
+    ...(patternlabConfig.css.includeComponentFiles ? componentScssFiles : []),
+    ...patternlabConfig.css.baseFiles,
+  ];
+  const jsFiles = [
+    ...(patternlabConfig.js.includeComponentFiles ? componentJsFiles : []),
+    ...patternlabConfig.js.baseFiles,
+  ];
+  const css = patternlabConfig.css.enabled
+    ? await buildCss(cssFiles, patternlabConfig.css.loadPaths)
+    : "";
   writeFile(
     path.join(distRoot, "app.css"),
     css || "/* no component styles */\n",
   );
-  const js = buildJs(jsFiles);
+  const js = patternlabConfig.js.enabled ? buildJs(jsFiles) : "";
   writeFile(
     path.join(distRoot, "app.js"),
     js || "/* no component scripts */\n",

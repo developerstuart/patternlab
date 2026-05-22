@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__PAGE_TITLE__</title>
+  <script>
+    (function(){
+      var t=localStorage.getItem('pl-theme');
+      if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))
+        document.documentElement.setAttribute('data-theme','dark');
+    })();
+  </script>
+  <style>
+__INDEX_CSS__
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>__HEADER_TITLE__ <span class="version">__HEADER_VERSION__</span></h1>
+  <span class="count">__TOTAL_COUNT__ component__TOTAL_SUFFIX__</span>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="theme-btn" aria-label="Toggle dark mode">🌙 Dark</button>
+</header>
+
+<aside>
+  <nav aria-label="Components">
+    <ul class="tree" id="tree-root"></ul>
+  </nav>
+</aside>
+
+<main>
+  <div class="main-toolbar">
+    <span id="breadcrumb" class="breadcrumb"></span>
+    <span class="variant-switch-wrap" id="variant-switch-wrap"><span>Variation</span><select id="variant-switch" class="variant-switch"></select></span>
+    <div class="spacer"></div>
+    <div class="viewport-tools" id="viewport-tools" style="display:none">
+      <button class="size-btn" data-size="full">Full</button>
+      <button class="size-btn" data-size="desktop">Desktop</button>
+      <button class="size-btn" data-size="tablet">Tablet</button>
+      <button class="size-btn" data-size="mobile">Mobile</button>
+    </div>
+    <button class="icon-btn" id="full-btn" style="display:none" title="Open in new tab">↗ Full</button>
+  </div>
+  <div class="main-content">
+    <div id="preview-host" style="display:none">
+      <div id="preview-shell">
+        <iframe id="preview-frame" title="Component preview"></iframe>
+        <div class="resize-handle handle-right" data-resize="right" aria-hidden="true"></div>
+        <div class="resize-handle handle-bottom" data-resize="bottom" aria-hidden="true"></div>
+        <div class="resize-handle handle-corner" data-resize="corner" aria-hidden="true"></div>
+      </div>
+    </div>
+    <div id="folder-view" style="display:none"></div>
+    <div class="empty" id="empty-msg">← Select a component or folder</div>
+  </div>
+</main>
+
+<script>
+__INDEX_JS__
+</script>
+</body>
+</html>

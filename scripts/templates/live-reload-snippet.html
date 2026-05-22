@@ -1,0 +1,12 @@
+<script>
+(function(){
+  if (!window.EventSource) return;
+  var es = new EventSource('/__live');
+  es.onmessage = function(ev){
+    try {
+      var payload = JSON.parse(ev.data);
+      if (payload && payload.type === 'reload') location.reload();
+    } catch {}
+  };
+})();
+</script>
