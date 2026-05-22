@@ -1,18 +1,18 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, '..');
-const srcRoot = path.join(repoRoot, 'src');
-const componentsRoot = path.join(srcRoot, 'components');
-const assetsRoot = path.join(srcRoot, 'assets');
-const distRoot = path.join(repoRoot, 'dist');
-const phpRenderer = path.join(repoRoot, 'php', 'render.php');
+const repoRoot = path.resolve(__dirname, "..");
+const srcRoot = path.join(repoRoot, "src");
+const componentsRoot = path.join(srcRoot, "components");
+const assetsRoot = path.join(srcRoot, "assets");
+const distRoot = path.join(repoRoot, "dist");
+const phpRenderer = path.join(repoRoot, "php", "render.php");
 
 const argv = process.argv.slice(2);
 const getArgValue = (name) => {
@@ -20,27 +20,27 @@ const getArgValue = (name) => {
   if (i < 0) return null;
   return argv[i + 1] ?? null;
 };
-const buildMode = getArgValue('--mode') ?? 'full'; // full | styles | component
-const changedSource = getArgValue('--source');
+const buildMode = getArgValue("--mode") ?? "full"; // full | styles | component
+const changedSource = getArgValue("--source");
 
 // ─── Supported template engines ───────────────────────────────────────────────
 
 const TEMPLATE_EXTS = new Map([
-  ['.twig', 'twig'],
-  ['.mustache', 'mustache'],
-  ['.njk', 'nunjucks'],
-  ['.liquid', 'liquid'],
-  ['.hbs', 'handlebars'],
-  ['.html', 'html'],
+  [".twig", "twig"],
+  [".mustache", "mustache"],
+  [".njk", "nunjucks"],
+  [".liquid", "liquid"],
+  [".hbs", "handlebars"],
+  [".html", "html"],
 ]);
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-const toPosix = (v) => v.split(path.sep).join('/');
+const toPosix = (v) => v.split(path.sep).join("/");
 
 const writeFile = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, 'utf8');
+  fs.writeFileSync(filePath, content, "utf8");
 };
 
 const copyDir = (src, dest) => {
@@ -56,17 +56,19 @@ const copyDir = (src, dest) => {
 
 // Minimal YAML frontmatter parser (key: value pairs only)
 const parseFrontmatter = (raw) => {
-  const m = raw.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?([\s\S]*)$/);
+  const m = raw.match(
+    /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?([\s\S]*)$/,
+  );
   if (!m) return { meta: {}, body: raw };
   const meta = {};
-  for (const line of m[1].split('\n')) {
-    const colon = line.indexOf(':');
+  for (const line of m[1].split("\n")) {
+    const colon = line.indexOf(":");
     if (colon < 0) continue;
     const key = line.slice(0, colon).trim();
     let val = line.slice(colon + 1).trim();
-    if (val === 'true') val = true;
-    else if (val === 'false') val = false;
-    else if (val !== '' && !Number.isNaN(Number(val))) val = Number(val);
+    if (val === "true") val = true;
+    else if (val === "false") val = false;
+    else if (val !== "" && !Number.isNaN(Number(val))) val = Number(val);
     if (key) meta[key] = val;
   }
   return { meta, body: m[2] };
@@ -74,26 +76,36 @@ const parseFrontmatter = (raw) => {
 
 const readMeta = (filePath) => {
   if (!fs.existsSync(filePath)) return {};
-  return parseFrontmatter(fs.readFileSync(filePath, 'utf8')).meta;
+  return parseFrontmatter(fs.readFileSync(filePath, "utf8")).meta;
 };
 
 const readJson = (filePath) => {
   if (!fs.existsSync(filePath)) return null;
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch {
+    return null;
+  }
 };
 
 const readText = (filePath) => {
-  if (!fs.existsSync(filePath)) return '';
-  return fs.readFileSync(filePath, 'utf8');
+  if (!fs.existsSync(filePath)) return "";
+  return fs.readFileSync(filePath, "utf8");
 };
 
 const mergeDeep = (...objs) => {
   const result = {};
   for (const obj of objs) {
-    if (!obj || typeof obj !== 'object') continue;
+    if (!obj || typeof obj !== "object") continue;
     for (const [k, v] of Object.entries(obj)) {
-      if (v !== null && typeof v === 'object' && !Array.isArray(v) &&
-          typeof result[k] === 'object' && result[k] !== null && !Array.isArray(result[k])) {
+      if (
+        v !== null &&
+        typeof v === "object" &&
+        !Array.isArray(v) &&
+        typeof result[k] === "object" &&
+        result[k] !== null &&
+        !Array.isArray(result[k])
+      ) {
         result[k] = mergeDeep(result[k], v);
       } else {
         result[k] = v;
@@ -104,7 +116,7 @@ const mergeDeep = (...objs) => {
 };
 
 const toLabel = (stem) =>
-  stem.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  stem.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 // ─── Rendering engines ────────────────────────────────────────────────────────
 
@@ -112,42 +124,58 @@ const toLabel = (stem) =>
 const engines = {};
 
 const renderTemplate = async (templatePath, engine, context) => {
-  const template = fs.readFileSync(templatePath, 'utf8');
+  const template = fs.readFileSync(templatePath, "utf8");
 
-  if (engine === 'twig') {
-    const tmpCtx = path.join(distRoot, '_ctx.json');
+  if (engine === "twig") {
+    const tmpCtx = path.join(distRoot, "_ctx.json");
     fs.mkdirSync(distRoot, { recursive: true });
-    fs.writeFileSync(tmpCtx, JSON.stringify(context), 'utf8');
-    const args = [phpRenderer, '--template', templatePath, '--components-root', componentsRoot, '--context', tmpCtx];
-    const html = execFileSync('php', args, { encoding: 'utf8' });
+    fs.writeFileSync(tmpCtx, JSON.stringify(context), "utf8");
+    const args = [
+      phpRenderer,
+      "--template",
+      templatePath,
+      "--components-root",
+      componentsRoot,
+      "--context",
+      tmpCtx,
+    ];
+    const html = execFileSync("php", args, { encoding: "utf8" });
     fs.rmSync(tmpCtx, { force: true });
     return html;
   }
 
-  if (engine === 'mustache') {
-    if (!engines.mustache) engines.mustache = (await import('mustache')).default;
+  if (engine === "mustache") {
+    if (!engines.mustache)
+      engines.mustache = (await import("mustache")).default;
     return engines.mustache.render(template, context);
   }
 
-  if (engine === 'nunjucks') {
-    if (!engines.nunjucks) engines.nunjucks = await import('nunjucks');
+  if (engine === "nunjucks") {
+    if (!engines.nunjucks) engines.nunjucks = await import("nunjucks");
     const { nunjucks } = engines;
-    const env = new nunjucks.Environment(new nunjucks.FileSystemLoader(componentsRoot), { autoescape: true });
+    const env = new nunjucks.Environment(
+      new nunjucks.FileSystemLoader(componentsRoot),
+      { autoescape: true },
+    );
     const rel = toPosix(path.relative(componentsRoot, templatePath));
     return env.render(rel, context);
   }
 
-  if (engine === 'liquid') {
+  if (engine === "liquid") {
     if (!engines.liquid) {
-      const { Liquid } = await import('liquidjs');
-      engines.liquid = new Liquid({ root: componentsRoot, extname: '.liquid' });
+      const { Liquid } = await import("liquidjs");
+      engines.liquid = new Liquid({ root: componentsRoot, extname: ".liquid" });
     }
-    return engines.liquid.renderFile(toPosix(path.relative(componentsRoot, templatePath)), context);
+    return engines.liquid.renderFile(
+      toPosix(path.relative(componentsRoot, templatePath)),
+      context,
+    );
   }
 
-  if (engine === 'handlebars') {
+  if (engine === "handlebars") {
     // Use mustache for basic handlebars compatibility
-    if (!engines.mustache) engines.mustache = (await import('mustache')).default;
+    if (!engines.mustache)
+      engines.mustache = (await import("mustache")).default;
     return engines.mustache.render(template, context);
   }
 
@@ -155,9 +183,9 @@ const renderTemplate = async (templatePath, engine, context) => {
   return template;
 };
 
-const buildComponentHead = (extraHead = '') => {
+const buildComponentHead = (extraHead = "") => {
   const trimmedExtra = extraHead.trim();
-  const extra = trimmedExtra ? `\n${trimmedExtra}\n` : '\n';
+  const extra = trimmedExtra ? `\n${trimmedExtra}\n` : "\n";
   return `  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script>(function(){var t=localStorage.getItem('pl-theme');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');})()</script>
@@ -165,7 +193,7 @@ const buildComponentHead = (extraHead = '') => {
 };
 
 // Wrap rendered body in a minimal HTML page that includes app.css / app.js
-const wrapComponent = (body, extraHead = '') => `<!doctype html>
+const wrapComponent = (body, extraHead = "") => `<!doctype html>
 <html lang="en">
 <head>
 ${buildComponentHead(extraHead)}
@@ -194,18 +222,23 @@ window.addEventListener('message', function(e) {
 const discoverDir = (dir, relPath, parentGlobal) => {
   if (!fs.existsSync(dir)) return null;
 
-  const folderMeta = readMeta(path.join(dir, '_meta.md'));
-  const folderGlobal = mergeDeep(parentGlobal, readJson(path.join(dir, '_global.json')) ?? {});
+  const folderMeta = readMeta(path.join(dir, "_meta.md"));
+  const folderGlobal = mergeDeep(
+    parentGlobal,
+    readJson(path.join(dir, "_global.json")) ?? {},
+  );
 
   // Scan directory entries
-  const templateFiles = new Map();   // stem → { fullPath, engine }
-  const jsonStems = new Set();       // stems that have a .json file
+  const templateFiles = new Map(); // stem → { fullPath, engine }
+  const jsonStems = new Set(); // stems that have a .json file
   const scssFiles = [];
   const jsFiles = [];
   const subDirs = [];
 
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    if (entry.name.startsWith('_') || entry.name === '.gitkeep') continue;
+  for (const entry of fs
+    .readdirSync(dir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name.startsWith("_") || entry.name === ".gitkeep") continue;
     const fullPath = path.join(dir, entry.name);
     const ext = path.extname(entry.name);
     const stem = path.basename(entry.name, ext);
@@ -217,11 +250,11 @@ const discoverDir = (dir, relPath, parentGlobal) => {
 
     if (TEMPLATE_EXTS.has(ext)) {
       templateFiles.set(stem, { fullPath, engine: TEMPLATE_EXTS.get(ext) });
-    } else if (ext === '.json') {
+    } else if (ext === ".json") {
       jsonStems.add(stem);
-    } else if (ext === '.scss') {
+    } else if (ext === ".scss") {
       scssFiles.push(fullPath);
-    } else if (ext === '.js') {
+    } else if (ext === ".js") {
       jsFiles.push(fullPath);
     }
     // .md files alongside components are read on-demand below
@@ -231,7 +264,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
   const bases = new Map(); // baseStem → base info
 
   for (const [stem, tmpl] of templateFiles) {
-    if (stem.includes('~')) continue; // variation templates handled below
+    if (stem.includes("~")) continue; // variation templates handled below
     const compMeta = readMeta(path.join(dir, `${stem}.md`));
     bases.set(stem, {
       templatePath: tmpl.fullPath,
@@ -244,8 +277,8 @@ const discoverDir = (dir, relPath, parentGlobal) => {
 
   // Attach variation templates
   for (const [stem, tmpl] of templateFiles) {
-    if (!stem.includes('~')) continue;
-    const tilde = stem.indexOf('~');
+    if (!stem.includes("~")) continue;
+    const tilde = stem.indexOf("~");
     const baseStem = stem.slice(0, tilde);
     const varName = stem.slice(tilde + 1);
     if (!bases.has(baseStem)) continue;
@@ -258,8 +291,8 @@ const discoverDir = (dir, relPath, parentGlobal) => {
 
   // Attach JSON-only variations (no matching variation template)
   for (const stem of jsonStems) {
-    if (!stem.includes('~')) continue;
-    const tilde = stem.indexOf('~');
+    if (!stem.includes("~")) continue;
+    const tilde = stem.indexOf("~");
     const baseStem = stem.slice(0, tilde);
     const varName = stem.slice(tilde + 1);
     if (!bases.has(baseStem)) continue;
@@ -277,14 +310,14 @@ const discoverDir = (dir, relPath, parentGlobal) => {
   for (const [stem, base] of bases) {
     if (base.meta.hidden) continue;
     const compId = relPath ? `${relPath}/${stem}` : stem;
-    const outBase = toPosix(path.join('components', relPath || '', stem));
+    const outBase = toPosix(path.join("components", relPath || "", stem));
 
     const varNodes = [];
     for (const [varName, varData] of base.variations) {
       const varId = `${compId}~${varName}`;
       const varOut = `${outBase}~${varName}.html`;
       varNodes.push({
-        type: 'variation',
+        type: "variation",
         id: varId,
         label: toLabel(varName),
         outputPath: varOut,
@@ -299,7 +332,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
     }
 
     componentNodes.push({
-      type: 'component',
+      type: "component",
       id: compId,
       label: base.meta.title ?? toLabel(stem),
       order: base.meta.order ?? 999,
@@ -321,7 +354,8 @@ const discoverDir = (dir, relPath, parentGlobal) => {
   for (const { name, fullPath } of subDirs) {
     const childRel = relPath ? `${relPath}/${name}` : name;
     const child = discoverDir(fullPath, childRel, folderGlobal);
-    if (child && !child.hidden && child.children.length > 0) folderNodes.push(child);
+    if (child && !child.hidden && child.children.length > 0)
+      folderNodes.push(child);
   }
 
   // Sort components: by order then alphabetically
@@ -335,12 +369,12 @@ const discoverDir = (dir, relPath, parentGlobal) => {
   });
 
   return {
-    type: 'folder',
-    id: relPath || '__root__',
+    type: "folder",
+    id: relPath || "__root__",
     label: folderMeta.title ?? toLabel(path.basename(dir)),
     order: folderMeta.order ?? 999,
     hidden: folderMeta.hidden ?? false,
-    folderPath: relPath || '',
+    folderPath: relPath || "",
     children: [...folderNodes, ...componentNodes],
     _scss: scssFiles,
     _js: jsFiles,
@@ -351,11 +385,12 @@ const discoverDir = (dir, relPath, parentGlobal) => {
 
 const flattenRenderables = (node) => {
   const out = [];
-  if (node.type === 'component') {
+  if (node.type === "component") {
     out.push(node);
     for (const v of node.variations ?? []) out.push(v);
   } else {
-    for (const child of node.children ?? []) out.push(...flattenRenderables(child));
+    for (const child of node.children ?? [])
+      out.push(...flattenRenderables(child));
   }
   return out;
 };
@@ -368,18 +403,26 @@ const collectStyleAssets = (node, scss = [], js = []) => {
 };
 
 const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
-  const normalized = toPosix(sourceRelPath || '').replace(/^\/+/, '');
+  const normalized = toPosix(sourceRelPath || "").replace(/^\/+/, "");
   if (!normalized) return [];
   const ext = path.posix.extname(normalized);
-  const supported = new Set(['.twig', '.mustache', '.njk', '.liquid', '.hbs', '.html', '.json']);
+  const supported = new Set([
+    ".twig",
+    ".mustache",
+    ".njk",
+    ".liquid",
+    ".hbs",
+    ".html",
+    ".json",
+  ]);
   if (!supported.has(ext)) return [];
 
   const stem = path.posix.basename(normalized, ext);
-  if (!stem || stem.startsWith('_')) return [];
+  if (!stem || stem.startsWith("_")) return [];
   const dir = path.posix.dirname(normalized);
-  const prefix = dir && dir !== '.' ? `${dir}/` : '';
+  const prefix = dir && dir !== "." ? `${dir}/` : "";
 
-  if (stem.includes('~')) {
+  if (stem.includes("~")) {
     return [`${prefix}${stem}`];
   }
 
@@ -392,23 +435,48 @@ const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
 // ─── SCSS / JS pipeline ───────────────────────────────────────────────────────
 
 const buildCss = async (scssFiles) => {
-  if (scssFiles.length === 0) return '';
-  const combined = scssFiles.map((f) => `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, 'utf8')}`).join('\n\n');
+  if (scssFiles.length === 0) return "";
+  const combined = scssFiles
+    .map(
+      (f) =>
+        `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
+    )
+    .join("\n\n");
   try {
-    const sass = await import('sass');
-    const result = sass.compileString(combined, {
-      loadPaths: [componentsRoot],
-      style: 'expanded',
+    const sassModule = await import("sass");
+    const sass =
+      typeof sassModule.compile === "function"
+        ? sassModule
+        : sassModule.default;
+    if (!sass || typeof sass.compile !== "function") {
+      throw new Error("Sass compiler API not found");
+    }
+
+    const compiled = scssFiles.map((filePath) => {
+      const result = sass.compile(filePath, {
+        loadPaths: [componentsRoot, srcRoot],
+        style: "expanded",
+      });
+      return `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${result.css}`;
     });
-    return result.css;
-  } catch {
+    return compiled.join("\n\n");
+  } catch (err) {
+    console.warn(
+      `Sass compile failed; using raw concatenated styles. ${err?.message ?? ""}`.trim(),
+    );
     return combined; // fallback: return raw SCSS/CSS concatenation
   }
 };
 
 const buildJs = (jsFiles) =>
-  jsFiles.length === 0 ? '' :
-  jsFiles.map((f) => `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, 'utf8')}`).join('\n\n');
+  jsFiles.length === 0
+    ? ""
+    : jsFiles
+        .map(
+          (f) =>
+            `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
+        )
+        .join("\n\n");
 
 // ─── Strip internal _* fields before serialising ──────────────────────────────
 
@@ -422,7 +490,8 @@ const stripPrivate = (node) => {
 // ─── Render a single component or variation ────────────────────────────────────
 
 const renderItem = async (item, componentHeadExtra) => {
-  const { templatePath, engine, baseJsonPath, varJsonPath, globalData } = item._render;
+  const { templatePath, engine, baseJsonPath, varJsonPath, globalData } =
+    item._render;
   const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
   const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
   const context = mergeDeep(globalData, baseData, varData);
@@ -433,7 +502,7 @@ const renderItem = async (item, componentHeadExtra) => {
 // ─── UI HTML ─────────────────────────────────────────────────────────────────
 
 const buildIndexHtml = (publicTree, totalCount) => {
-  const safeTree = JSON.stringify(publicTree).replace(/<\//g, '<\\/');
+  const safeTree = JSON.stringify(publicTree).replace(/<\//g, "<\\/");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -539,7 +608,7 @@ const buildIndexHtml = (publicTree, totalCount) => {
 
 <header>
   <h1>Pattern Lab</h1>
-  <span class="count">${totalCount} component${totalCount !== 1 ? 's' : ''}</span>
+  <span class="count">${totalCount} component${totalCount !== 1 ? "s" : ""}</span>
   <div class="spacer"></div>
   <button class="icon-btn" id="theme-btn" aria-label="Toggle dark mode">🌙 Dark</button>
 </header>
@@ -823,10 +892,10 @@ if (restoreId && nodeMap.has(restoreId)) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 const discover = () => {
-  const globalData = readJson(path.join(srcRoot, '_global.json')) ?? {};
-  const tree = discoverDir(componentsRoot, '', globalData);
+  const globalData = readJson(path.join(srcRoot, "_global.json")) ?? {};
+  const tree = discoverDir(componentsRoot, "", globalData);
   if (!tree) {
-    console.error('No components found under src/components/');
+    console.error("No components found under src/components/");
     process.exit(1);
   }
   return tree;
@@ -835,40 +904,62 @@ const discover = () => {
 const writeCssJs = async (tree) => {
   const { scss: scssFiles, js: jsFiles } = collectStyleAssets(tree);
   const css = await buildCss(scssFiles);
-  writeFile(path.join(distRoot, 'app.css'), css || '/* no component styles */\n');
+  writeFile(
+    path.join(distRoot, "app.css"),
+    css || "/* no component styles */\n",
+  );
   const js = buildJs(jsFiles);
-  writeFile(path.join(distRoot, 'app.js'), js || '/* no component scripts */\n');
+  writeFile(
+    path.join(distRoot, "app.js"),
+    js || "/* no component scripts */\n",
+  );
 };
 
 const renderAll = async (tree) => {
   const renderables = flattenRenderables(tree);
-  const componentHeadExtra = readText(path.join(srcRoot, '_component-head.html'));
+  const componentHeadExtra = readText(
+    path.join(srcRoot, "_component-head.html"),
+  );
   for (const item of renderables) {
     const html = await renderItem(item, componentHeadExtra);
-    const outPath = path.join(distRoot, ...item.outputPath.split('/'));
+    const outPath = path.join(distRoot, ...item.outputPath.split("/"));
     writeFile(outPath, html);
   }
   return renderables;
 };
 
 const main = async () => {
-  if (buildMode === 'full') {
+  if (buildMode === "full") {
     fs.rmSync(distRoot, { recursive: true, force: true });
     fs.mkdirSync(distRoot, { recursive: true });
     const tree = discover();
     const renderables = await renderAll(tree);
     await writeCssJs(tree);
-    copyDir(assetsRoot, path.join(distRoot, 'assets'));
+    copyDir(assetsRoot, path.join(distRoot, "assets"));
     const publicTree = stripPrivate(tree);
-    writeFile(path.join(distRoot, 'tree.json'), JSON.stringify(publicTree, null, 2) + '\n');
-    const manifest = renderables.map(({ id, label, type, outputPath }) => ({ id, label, type, outputPath }));
-    writeFile(path.join(distRoot, 'components.json'), JSON.stringify(manifest, null, 2) + '\n');
-    writeFile(path.join(distRoot, 'index.html'), buildIndexHtml(publicTree, renderables.length));
+    writeFile(
+      path.join(distRoot, "tree.json"),
+      JSON.stringify(publicTree, null, 2) + "\n",
+    );
+    const manifest = renderables.map(({ id, label, type, outputPath }) => ({
+      id,
+      label,
+      type,
+      outputPath,
+    }));
+    writeFile(
+      path.join(distRoot, "components.json"),
+      JSON.stringify(manifest, null, 2) + "\n",
+    );
+    writeFile(
+      path.join(distRoot, "index.html"),
+      buildIndexHtml(publicTree, renderables.length),
+    );
     console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
     return;
   }
 
-  if (buildMode === 'styles') {
+  if (buildMode === "styles") {
     fs.mkdirSync(distRoot, { recursive: true });
     const tree = discover();
     await writeCssJs(tree);
@@ -876,21 +967,23 @@ const main = async () => {
     return;
   }
 
-  if (buildMode === 'component') {
+  if (buildMode === "component") {
     fs.mkdirSync(distRoot, { recursive: true });
     const tree = discover();
     const renderables = flattenRenderables(tree);
     const ids = resolveAffectedComponentIds(changedSource, renderables);
     if (ids.length === 0) {
-      console.log('No matching component targets found');
+      console.log("No matching component targets found");
       return;
     }
     const idSet = new Set(ids);
-    const componentHeadExtra = readText(path.join(srcRoot, '_component-head.html'));
+    const componentHeadExtra = readText(
+      path.join(srcRoot, "_component-head.html"),
+    );
     for (const item of renderables) {
       if (!idSet.has(item.id)) continue;
       const html = await renderItem(item, componentHeadExtra);
-      const outPath = path.join(distRoot, ...item.outputPath.split('/'));
+      const outPath = path.join(distRoot, ...item.outputPath.split("/"));
       writeFile(outPath, html);
     }
     console.log(`Re-rendered ${ids.length} component page(s)`);
@@ -901,4 +994,7 @@ const main = async () => {
   process.exit(1);
 };
 
-main().catch((err) => { console.error(err); process.exit(1); });
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
