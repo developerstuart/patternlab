@@ -14,6 +14,15 @@ const assetsRoot = path.join(srcRoot, 'assets');
 const distRoot = path.join(repoRoot, 'dist');
 const phpRenderer = path.join(repoRoot, 'php', 'render.php');
 
+const argv = process.argv.slice(2);
+const getArgValue = (name) => {
+  const i = argv.indexOf(name);
+  if (i < 0) return null;
+  return argv[i + 1] ?? null;
+};
+const buildMode = getArgValue('--mode') ?? 'full'; // full | styles | component
+const changedSource = getArgValue('--source');
+
 // ─── Supported template engines ───────────────────────────────────────────────
 
 const TEMPLATE_EXTS = new Map([
@@ -71,6 +80,11 @@ const readMeta = (filePath) => {
 const readJson = (filePath) => {
   if (!fs.existsSync(filePath)) return null;
   try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+};
+
+const readText = (filePath) => {
+  if (!fs.existsSync(filePath)) return '';
+  return fs.readFileSync(filePath, 'utf8');
 };
 
 const mergeDeep = (...objs) => {
@@ -141,18 +155,23 @@ const renderTemplate = async (templatePath, engine, context) => {
   return template;
 };
 
-// Wrap rendered body in a minimal HTML page that includes app.css / app.js
-const wrapComponent = (body) => `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
+const buildComponentHead = (extraHead = '') => {
+  const trimmedExtra = extraHead.trim();
+  const extra = trimmedExtra ? `\n${trimmedExtra}\n` : '\n';
+  return `  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script>(function(){var t=localStorage.getItem('pl-theme');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');})()</script>
-  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/app.css">${extra}  <script src="/app.js" defer></script>`;
+};
+
+// Wrap rendered body in a minimal HTML page that includes app.css / app.js
+const wrapComponent = (body, extraHead = '') => `<!doctype html>
+<html lang="en">
+<head>
+${buildComponentHead(extraHead)}
 </head>
 <body>
 ${body}
-<script src="/app.js"></script>
 <script>
 window.addEventListener('message', function(e) {
   if (e.data && e.data.type === 'pl-theme') {
@@ -348,6 +367,28 @@ const collectStyleAssets = (node, scss = [], js = []) => {
   return { scss, js };
 };
 
+const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
+  const normalized = toPosix(sourceRelPath || '').replace(/^\/+/, '');
+  if (!normalized) return [];
+  const ext = path.posix.extname(normalized);
+  const supported = new Set(['.twig', '.mustache', '.njk', '.liquid', '.hbs', '.html', '.json']);
+  if (!supported.has(ext)) return [];
+
+  const stem = path.posix.basename(normalized, ext);
+  if (!stem || stem.startsWith('_')) return [];
+  const dir = path.posix.dirname(normalized);
+  const prefix = dir && dir !== '.' ? `${dir}/` : '';
+
+  if (stem.includes('~')) {
+    return [`${prefix}${stem}`];
+  }
+
+  const baseId = `${prefix}${stem}`;
+  return renderables
+    .map((item) => item.id)
+    .filter((id) => id === baseId || id.startsWith(`${baseId}~`));
+};
+
 // ─── SCSS / JS pipeline ───────────────────────────────────────────────────────
 
 const buildCss = async (scssFiles) => {
@@ -380,13 +421,13 @@ const stripPrivate = (node) => {
 
 // ─── Render a single component or variation ────────────────────────────────────
 
-const renderItem = async (item) => {
+const renderItem = async (item, componentHeadExtra) => {
   const { templatePath, engine, baseJsonPath, varJsonPath, globalData } = item._render;
   const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
   const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
   const context = mergeDeep(globalData, baseData, varData);
   const body = await renderTemplate(templatePath, engine, context);
-  return wrapComponent(body);
+  return wrapComponent(body, componentHeadExtra);
 };
 
 // ─── UI HTML ─────────────────────────────────────────────────────────────────
@@ -456,10 +497,22 @@ const buildIndexHtml = (publicTree, totalCount) => {
     /* ── Main ────────────────────────────── */
     main{overflow:hidden;display:flex;flex-direction:column}
     .main-toolbar{display:flex;align-items:center;gap:.5rem;padding:.3rem .75rem;
-      border-bottom:1px solid var(--border);min-height:36px;font-size:.8rem}
+      border-bottom:1px solid var(--border);min-height:36px;font-size:.8rem;flex-wrap:wrap}
     .breadcrumb{color:var(--text);font-weight:500}
     .main-content{flex:1;overflow:auto;position:relative}
+    #preview-host{width:100%;height:100%;padding:.75rem;display:flex;align-items:flex-start;justify-content:center;overflow:auto}
+    #preview-shell{position:relative;width:100%;height:100%;min-width:280px;min-height:220px;max-width:100%;max-height:100%;
+      border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg)}
     #preview-frame{width:100%;height:100%;border:none;display:block;background:var(--bg)}
+    .resize-handle{position:absolute;z-index:2;background:transparent}
+    .handle-right{top:0;right:0;width:8px;height:100%;cursor:ew-resize}
+    .handle-bottom{left:0;bottom:0;width:100%;height:8px;cursor:ns-resize}
+    .handle-corner{right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize}
+    .viewport-tools{display:flex;align-items:center;gap:.25rem}
+    .size-btn{background:none;border:1px solid var(--border);border-radius:var(--radius);
+      padding:.2rem .5rem;color:var(--text);font-size:.75rem}
+    .size-btn:hover{background:var(--surface2)}
+    .size-btn.active{background:var(--accent);color:var(--accent-fg);border-color:transparent}
     /* ── Folder view ─────────────────────── */
     #folder-view{padding:1rem;display:grid;
       grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem}
@@ -501,10 +554,23 @@ const buildIndexHtml = (publicTree, totalCount) => {
   <div class="main-toolbar">
     <span id="breadcrumb" class="breadcrumb"></span>
     <div class="spacer"></div>
+    <div class="viewport-tools" id="viewport-tools" style="display:none">
+      <button class="size-btn" data-size="full">Full</button>
+      <button class="size-btn" data-size="desktop">Desktop</button>
+      <button class="size-btn" data-size="tablet">Tablet</button>
+      <button class="size-btn" data-size="mobile">Mobile</button>
+    </div>
     <button class="icon-btn" id="full-btn" style="display:none" title="Open in new tab">↗ Full</button>
   </div>
   <div class="main-content">
-    <iframe id="preview-frame" title="Component preview" style="display:none"></iframe>
+    <div id="preview-host" style="display:none">
+      <div id="preview-shell">
+        <iframe id="preview-frame" title="Component preview"></iframe>
+        <div class="resize-handle handle-right" data-resize="right" aria-hidden="true"></div>
+        <div class="resize-handle handle-bottom" data-resize="bottom" aria-hidden="true"></div>
+        <div class="resize-handle handle-corner" data-resize="corner" aria-hidden="true"></div>
+      </div>
+    </div>
     <div id="folder-view" style="display:none"></div>
     <div class="empty" id="empty-msg">← Select a component or folder</div>
   </div>
@@ -533,28 +599,96 @@ applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
 /* ── Helpers ──────────────────────────────────────────── */
 const escHtml = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const $ = id => document.getElementById(id);
+const VIEWPORT_WIDTHS = { full: null, desktop: 1440, tablet: 768, mobile: 375 };
 
 /* ── View management ─────────────────────────────────── */
 let activeId = null;
 const nodeMap = new Map(); // id → { node, btnEl }
+let activeViewport = 'full';
+
+const setViewportPreset = (size) => {
+  activeViewport = VIEWPORT_WIDTHS[size] === undefined ? 'full' : size;
+  const shell = $('preview-shell');
+  const host = $('preview-host');
+  const maxW = Math.max(280, host.clientWidth - 16);
+  const maxH = Math.max(220, host.clientHeight - 16);
+  const width = VIEWPORT_WIDTHS[activeViewport];
+  shell.style.width = width == null ? '100%' : Math.min(width, maxW) + 'px';
+  shell.style.height = '100%';
+  shell.style.maxWidth = '100%';
+  shell.style.maxHeight = '100%';
+  shell.dataset.size = activeViewport;
+  document.querySelectorAll('[data-size]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.size === activeViewport);
+  });
+};
+
+const setupViewportResizing = () => {
+  const shell = $('preview-shell');
+  const host = $('preview-host');
+  let drag = null;
+
+  const onMove = (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    const maxW = Math.max(280, host.clientWidth - 16);
+    const maxH = Math.max(220, host.clientHeight - 16);
+    if (drag.mode === 'right' || drag.mode === 'corner') {
+      const nextW = Math.min(maxW, Math.max(280, drag.startWidth + dx));
+      shell.style.width = nextW + 'px';
+    }
+    if (drag.mode === 'bottom' || drag.mode === 'corner') {
+      const nextH = Math.min(maxH, Math.max(220, drag.startHeight + dy));
+      shell.style.height = nextH + 'px';
+    }
+    activeViewport = 'custom';
+    document.querySelectorAll('[data-size]').forEach((btn) => btn.classList.remove('active'));
+  };
+
+  const onUp = () => {
+    if (!drag) return;
+    drag = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  };
+
+  $('preview-shell').addEventListener('pointerdown', (e) => {
+    const mode = e.target.getAttribute('data-resize');
+    if (!mode) return;
+    e.preventDefault();
+    drag = {
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: shell.getBoundingClientRect().width,
+      startHeight: shell.getBoundingClientRect().height,
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  });
+};
 
 const showEmpty = () => {
-  $('preview-frame').style.display = 'none';
+  $('preview-host').style.display = 'none';
   $('folder-view').style.display = 'none';
   $('empty-msg').style.display = '';
   $('full-btn').style.display = 'none';
+  $('viewport-tools').style.display = 'none';
   $('breadcrumb').textContent = '';
   activeId = null; refreshActive();
 };
 
 const showComponent = (id, outputPath, label) => {
   activeId = id;
-  $('preview-frame').style.display = '';
+  $('preview-host').style.display = '';
   $('preview-frame').src = '/' + outputPath;
   $('folder-view').style.display = 'none';
   $('empty-msg').style.display = 'none';
   $('breadcrumb').textContent = label;
   $('full-btn').style.display = '';
+  $('viewport-tools').style.display = '';
+  setViewportPreset(activeViewport === 'custom' ? 'full' : activeViewport);
   $('full-btn').onclick = () => window.open('/' + outputPath, '_blank');
   history.replaceState({}, '', '?id=' + encodeURIComponent(id));
   refreshActive();
@@ -573,9 +707,10 @@ const flattenComponents = (node) => {
 
 const showFolder = (node) => {
   activeId = node.id;
-  $('preview-frame').style.display = 'none';
+  $('preview-host').style.display = 'none';
   $('empty-msg').style.display = 'none';
   $('full-btn').style.display = 'none';
+  $('viewport-tools').style.display = 'none';
   $('breadcrumb').textContent = node.label;
   history.replaceState({}, '', '?id=' + encodeURIComponent(node.id));
 
@@ -653,6 +788,15 @@ const buildTree = (nodes, ulEl, depth) => {
 };
 
 buildTree(TREE.children || [], $('tree-root'), 0);
+setupViewportResizing();
+document.querySelectorAll('#viewport-tools [data-size]').forEach((btn) => {
+  btn.addEventListener('click', () => setViewportPreset(btn.dataset.size));
+});
+window.addEventListener('resize', () => {
+  if ($('preview-host').style.display === 'none') return;
+  if (activeViewport === 'custom') return;
+  setViewportPreset(activeViewport);
+});
 
 /* ── Folder-view card clicks ─────────────────────────── */
 $('folder-view').addEventListener('click', e => {
@@ -678,55 +822,83 @@ if (restoreId && nodeMap.has(restoreId)) {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const main = async () => {
-  // Clean dist
-  fs.rmSync(distRoot, { recursive: true, force: true });
-  fs.mkdirSync(distRoot, { recursive: true });
-
-  // Load global data from src/_global.json
+const discover = () => {
   const globalData = readJson(path.join(srcRoot, '_global.json')) ?? {};
-
-  // Discover component tree
   const tree = discoverDir(componentsRoot, '', globalData);
   if (!tree) {
     console.error('No components found under src/components/');
     process.exit(1);
   }
+  return tree;
+};
 
-  // Collect SCSS/JS paths
+const writeCssJs = async (tree) => {
   const { scss: scssFiles, js: jsFiles } = collectStyleAssets(tree);
+  const css = await buildCss(scssFiles);
+  writeFile(path.join(distRoot, 'app.css'), css || '/* no component styles */\n');
+  const js = buildJs(jsFiles);
+  writeFile(path.join(distRoot, 'app.js'), js || '/* no component scripts */\n');
+};
 
-  // Render all components/variations
+const renderAll = async (tree) => {
   const renderables = flattenRenderables(tree);
+  const componentHeadExtra = readText(path.join(srcRoot, '_component-head.html'));
   for (const item of renderables) {
-    const html = await renderItem(item);
+    const html = await renderItem(item, componentHeadExtra);
     const outPath = path.join(distRoot, ...item.outputPath.split('/'));
     writeFile(outPath, html);
   }
+  return renderables;
+};
 
-  // SCSS → app.css
-  const css = await buildCss(scssFiles);
-  writeFile(path.join(distRoot, 'app.css'), css || '/* no component styles */\n');
+const main = async () => {
+  if (buildMode === 'full') {
+    fs.rmSync(distRoot, { recursive: true, force: true });
+    fs.mkdirSync(distRoot, { recursive: true });
+    const tree = discover();
+    const renderables = await renderAll(tree);
+    await writeCssJs(tree);
+    copyDir(assetsRoot, path.join(distRoot, 'assets'));
+    const publicTree = stripPrivate(tree);
+    writeFile(path.join(distRoot, 'tree.json'), JSON.stringify(publicTree, null, 2) + '\n');
+    const manifest = renderables.map(({ id, label, type, outputPath }) => ({ id, label, type, outputPath }));
+    writeFile(path.join(distRoot, 'components.json'), JSON.stringify(manifest, null, 2) + '\n');
+    writeFile(path.join(distRoot, 'index.html'), buildIndexHtml(publicTree, renderables.length));
+    console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
+    return;
+  }
 
-  // JS → app.js
-  const js = buildJs(jsFiles);
-  writeFile(path.join(distRoot, 'app.js'), js || '/* no component scripts */\n');
+  if (buildMode === 'styles') {
+    fs.mkdirSync(distRoot, { recursive: true });
+    const tree = discover();
+    await writeCssJs(tree);
+    console.log(`Rebuilt app.css/app.js in ${distRoot}`);
+    return;
+  }
 
-  // Copy assets
-  copyDir(assetsRoot, path.join(distRoot, 'assets'));
+  if (buildMode === 'component') {
+    fs.mkdirSync(distRoot, { recursive: true });
+    const tree = discover();
+    const renderables = flattenRenderables(tree);
+    const ids = resolveAffectedComponentIds(changedSource, renderables);
+    if (ids.length === 0) {
+      console.log('No matching component targets found');
+      return;
+    }
+    const idSet = new Set(ids);
+    const componentHeadExtra = readText(path.join(srcRoot, '_component-head.html'));
+    for (const item of renderables) {
+      if (!idSet.has(item.id)) continue;
+      const html = await renderItem(item, componentHeadExtra);
+      const outPath = path.join(distRoot, ...item.outputPath.split('/'));
+      writeFile(outPath, html);
+    }
+    console.log(`Re-rendered ${ids.length} component page(s)`);
+    return;
+  }
 
-  // Write tree manifest
-  const publicTree = stripPrivate(tree);
-  writeFile(path.join(distRoot, 'tree.json'), JSON.stringify(publicTree, null, 2) + '\n');
-
-  // Write flat component manifest (for external tooling)
-  const manifest = renderables.map(({ id, label, type, outputPath }) => ({ id, label, type, outputPath }));
-  writeFile(path.join(distRoot, 'components.json'), JSON.stringify(manifest, null, 2) + '\n');
-
-  // Build index.html
-  writeFile(path.join(distRoot, 'index.html'), buildIndexHtml(publicTree, renderables.length));
-
-  console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
+  console.error(`Unknown build mode "${buildMode}"`);
+  process.exit(1);
 };
 
 main().catch((err) => { console.error(err); process.exit(1); });
