@@ -26,6 +26,8 @@ const $ = (id) => document.getElementById(id);
 const VIEWPORT_WIDTHS = { full: null, desktop: 1440, tablet: 768, mobile: 375 };
 const nodeMap = new Map();
 const familyById = new Map();
+// nodeId → { li, iconEl, parentId, nodeType }
+const nodeTreeMap = new Map();
 
 const collectFamilies = (node) => {
   if (node.type === 'component') {
@@ -140,24 +142,45 @@ const updateVariantSwitcher = (currentId) => {
   select.value = currentId;
 };
 
-const showEmpty = () => {
+const hideAllPanels = () => {
   $('preview-host').style.display = 'none';
   $('folder-view').style.display = 'none';
-  $('empty-msg').style.display = '';
+  $('home-view').style.display = 'none';
+  $('empty-msg').style.display = 'none';
   $('full-btn').style.display = 'none';
   $('viewport-tools').style.display = 'none';
   $('variant-switch-wrap').style.display = 'none';
+};
+
+const showEmpty = () => {
+  hideAllPanels();
+  $('empty-msg').style.display = '';
   $('breadcrumb').textContent = '';
   activeId = null;
   refreshActive();
 };
 
+/* ── Nav: expand tree to reveal a node ──────────────────── */
+const expandToNode = (id) => {
+  const entry = nodeTreeMap.get(id);
+  if (!entry) return;
+  let pid = entry.parentId;
+  while (pid) {
+    const p = nodeTreeMap.get(pid);
+    if (!p) break;
+    if (p.nodeType === 'folder' && !p.li.classList.contains('open')) {
+      p.li.classList.add('open');
+      p.iconEl.textContent = '▼';
+    }
+    pid = p.parentId;
+  }
+};
+
 const showComponent = (id, outputPath, label) => {
   activeId = id;
+  hideAllPanels();
   $('preview-host').style.display = '';
   $('preview-frame').src = '/' + outputPath;
-  $('folder-view').style.display = 'none';
-  $('empty-msg').style.display = 'none';
   $('breadcrumb').textContent = label;
   $('full-btn').style.display = '';
   $('viewport-tools').style.display = UI_CONFIG.showViewportControls ? '' : 'none';
@@ -165,6 +188,7 @@ const showComponent = (id, outputPath, label) => {
   $('full-btn').onclick = () => window.open('/' + outputPath, '_blank');
   history.replaceState({}, '', '?id=' + encodeURIComponent(id));
   updateVariantSwitcher(id);
+  expandToNode(id);
   refreshActive();
   $('preview-frame').onload = () => {
     try { $('preview-frame').contentWindow.postMessage({ type: 'pl-theme', theme: localStorage.getItem('pl-theme') || 'light' }, '*'); } catch {}
@@ -178,36 +202,118 @@ const flattenComponents = (node) => {
   return out;
 };
 
+/* ── Preview iframe: non-interactive, scale-to-fit ──────── */
+const PREVIEW_RENDER_W = 1440;
+
+const applyIframeScale = (iframe) => {
+  const card = iframe.closest('.ccard');
+  const cardW = (card ? card.offsetWidth : 0) || 280;
+  try {
+    const doc = iframe.contentDocument;
+    if (!doc || !doc.documentElement) { return; }
+    const sw = doc.documentElement.scrollWidth || PREVIEW_RENDER_W;
+    const scale = Math.min(1, cardW / sw);
+    iframe.style.transform = 'scale(' + scale + ')';
+    iframe.style.transformOrigin = 'top left';
+    // shrink the overflow wrapper height to match visible scaled content
+    const preview = iframe.closest('.ccard-preview');
+    if (preview) {
+      const sh = doc.documentElement.scrollHeight || 300;
+      preview.style.height = Math.min(220, Math.ceil(sh * scale)) + 'px';
+    }
+  } catch {
+    const scale = cardW / PREVIEW_RENDER_W;
+    iframe.style.transform = 'scale(' + scale + ')';
+    iframe.style.transformOrigin = 'top left';
+  }
+};
+
+const initPreviewIframe = (iframe) => {
+  iframe.style.width = PREVIEW_RENDER_W + 'px';
+  iframe.style.height = '900px';
+  iframe.style.border = 'none';
+  iframe.style.display = 'block';
+  iframe.style.pointerEvents = 'none';
+  iframe.addEventListener('load', () => {
+    try { iframe.contentWindow.postMessage({ type: 'pl-theme', theme: localStorage.getItem('pl-theme') || 'light' }, '*'); } catch {}
+    applyIframeScale(iframe);
+  });
+};
+
+/* ── Folder view ─────────────────────────────────────────── */
 const showFolder = (node) => {
   activeId = node.id;
-  $('preview-host').style.display = 'none';
-  $('empty-msg').style.display = 'none';
-  $('full-btn').style.display = 'none';
-  $('viewport-tools').style.display = 'none';
-  $('variant-switch-wrap').style.display = 'none';
+  hideAllPanels();
   $('breadcrumb').textContent = node.label;
   history.replaceState({}, '', '?id=' + encodeURIComponent(node.id));
+  expandToNode(node.id);
 
-  const comps = flattenComponents(node);
+  const directChildren = node.children || [];
   const fv = $('folder-view');
   fv.style.display = '';
-  fv.innerHTML = comps.map((c) => {
-    const varBtns = (c.variations || []).map((v) =>
-      '<button class="var-btn" data-act="comp" data-id="' + escHtml(v.id) + '" data-path="' + escHtml(v.outputPath) + '" data-label="' + escHtml(v.label) + '">' + escHtml(v.label) + '</button>'
-    ).join('');
+  fv.innerHTML = directChildren.map((child) => {
+    if (child.type === 'folder') {
+      const count = flattenComponents(child).length;
+      return '<div class="ccard ccard-folder" data-folder-id="' + escHtml(child.id) + '">'
+        + '<div class="ccard-hd"><span class="ccard-title">' + escHtml(child.label) + '</span>'
+        + '<button class="open-btn" data-act="folder" data-id="' + escHtml(child.id) + '">Open</button></div>'
+        + '<p class="ccard-count">' + count + ' component' + (count !== 1 ? 's' : '') + '</p>'
+        + '</div>';
+    }
+    const hasVars = (child.variations || []).length > 0;
+    const varHtml = hasVars
+      ? '<div class="ccard-vars">'
+        + '<button class="var-btn var-default" data-act="comp" data-id="' + escHtml(child.id) + '" data-path="' + escHtml(child.outputPath) + '" data-label="' + escHtml(child.label) + '">Default</button>'
+        + (child.variations || []).map((v) =>
+          '<button class="var-btn" data-act="comp" data-id="' + escHtml(v.id) + '" data-path="' + escHtml(v.outputPath) + '" data-label="' + escHtml(v.label) + '">' + escHtml(v.label) + '</button>'
+        ).join('')
+        + '</div>'
+      : '';
     return '<div class="ccard">'
-      + '<div class="ccard-hd">' + escHtml(c.label)
-      + '<button class="open-btn" data-act="comp" data-id="' + escHtml(c.id) + '" data-path="' + escHtml(c.outputPath) + '" data-label="' + escHtml(c.label) + '">Open</button></div>'
-      + (varBtns ? '<div class="ccard-vars">' + varBtns + '</div>' : '')
-      + '<iframe src="/' + escHtml(c.outputPath) + '" loading="lazy" title="' + escHtml(c.label) + '"></iframe>'
+      + '<div class="ccard-hd"><span class="ccard-title">' + escHtml(child.label) + '</span>'
+      + '<button class="open-btn" data-act="comp" data-id="' + escHtml(child.id) + '" data-path="' + escHtml(child.outputPath) + '" data-label="' + escHtml(child.label) + '">Open</button></div>'
+      + varHtml
+      + '<div class="ccard-preview"><iframe src="/' + escHtml(child.outputPath) + '" loading="lazy" title="' + escHtml(child.label) + '"></iframe></div>'
       + '</div>';
-  }).join('') || '<p style="color:var(--text-muted);grid-column:1/-1">No components in this folder.</p>';
+  }).join('') || '<p style="color:var(--text-muted);grid-column:1/-1">No items in this folder.</p>';
+
+  // Initialise preview iframes after layout
+  requestAnimationFrame(() => {
+    fv.querySelectorAll('.ccard-preview iframe').forEach(initPreviewIframe);
+  });
+
+  refreshActive();
+};
+
+/* ── Homepage ────────────────────────────────────────────── */
+const showHome = () => {
+  activeId = null;
+  hideAllPanels();
+  $('breadcrumb').textContent = '';
+  history.replaceState({}, '', location.pathname);
+
+  const hv = $('home-view');
+  hv.style.display = '';
+
+  const topFolders = (TREE.children || []).filter((n) => n.type === 'folder' && !n.hidden);
+  hv.innerHTML = topFolders.map((folder) => {
+    const childLinks = (folder.children || []).filter((c) => !c.hidden).map((child) => {
+      if (child.type === 'folder') {
+        return '<li><button class="hlink" data-act="folder" data-id="' + escHtml(child.id) + '">📁 ' + escHtml(child.label) + '</button></li>';
+      }
+      return '<li><button class="hlink" data-act="comp" data-id="' + escHtml(child.id) + '" data-path="' + escHtml(child.outputPath) + '" data-label="' + escHtml(child.label) + '">◦ ' + escHtml(child.label) + '</button></li>';
+    }).join('');
+    return '<div class="hcard">'
+      + '<div class="hcard-hd"><button class="hcard-title" data-act="folder" data-id="' + escHtml(folder.id) + '">' + escHtml(folder.label) + '</button></div>'
+      + '<ul class="hcard-list">' + childLinks + '</ul>'
+      + '</div>';
+  }).join('') || '<p style="color:var(--text-muted)">No folders found.</p>';
 
   refreshActive();
 };
 
 /* ── Tree building ───────────────────────────────────── */
-const buildTree = (nodes, ulEl, depth) => {
+const buildTree = (nodes, ulEl, depth, parentId) => {
   for (const node of nodes) {
     if (node.hidden) continue;
     const li = document.createElement('li');
@@ -226,6 +332,7 @@ const buildTree = (nodes, ulEl, depth) => {
     li.appendChild(btn);
 
     nodeMap.set(node.id, { node, btnEl: btn });
+    nodeTreeMap.set(node.id, { li, iconEl: icon, parentId: parentId || null, nodeType: node.type });
 
     const hasChildren = (node.type === 'folder' && (node.children || []).length > 0)
       || (node.type === 'component' && (node.variations || []).length > 0);
@@ -238,15 +345,41 @@ const buildTree = (nodes, ulEl, depth) => {
       const childNodes = node.type === 'folder'
         ? (node.children || [])
         : ([{ type: 'variation', id: node.id + '~default', label: 'Default', outputPath: node.outputPath, defaultFor: node.id }].concat(node.variations || []));
-      buildTree(childNodes, childUl, depth + 1);
+      buildTree(childNodes, childUl, depth + 1, node.type === 'folder' ? node.id : parentId);
 
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const open = li.classList.toggle('open');
-        icon.textContent = open ? '▼' : '▶';
-        if (node.type === 'folder') showFolder(node);
-        else showComponent(node.id, node.outputPath, node.label);
-      });
+      if (node.type === 'folder') {
+        // Icon click: toggle expand/collapse only (no navigation)
+        icon.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = li.classList.toggle('open');
+          icon.textContent = open ? '▼' : '▶';
+        });
+        // Label click: navigate to folder AND ensure expanded
+        lbl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!li.classList.contains('open')) {
+            li.classList.add('open');
+            icon.textContent = '▼';
+          }
+          showFolder(node);
+        });
+        // Button area outside icon/lbl: same as label
+        btn.addEventListener('click', () => {
+          if (!li.classList.contains('open')) {
+            li.classList.add('open');
+            icon.textContent = '▼';
+          }
+          showFolder(node);
+        });
+      } else {
+        // Component with variations: toggle + show component
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = li.classList.toggle('open');
+          icon.textContent = open ? '▼' : '▶';
+          showComponent(node.id, node.outputPath, node.label);
+        });
+      }
     } else {
       icon.textContent = node.type === 'variation' ? '◦' : '○';
       btn.addEventListener('click', () => {
@@ -259,7 +392,7 @@ const buildTree = (nodes, ulEl, depth) => {
   }
 };
 
-buildTree(TREE.children || [], $('tree-root'), 0);
+buildTree(TREE.children || [], $('tree-root'), 0, null);
 setupViewportResizing();
 if (!UI_CONFIG.enableResizeHandles) {
   document.querySelectorAll('.resize-handle').forEach((el) => { el.style.display = 'none'; });
@@ -287,7 +420,23 @@ $('variant-switch').addEventListener('change', (e) => {
 $('folder-view').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
-  if (btn.dataset.act === 'comp') showComponent(btn.dataset.id, btn.dataset.path, btn.dataset.label);
+  if (btn.dataset.act === 'comp') {
+    showComponent(btn.dataset.id, btn.dataset.path, btn.dataset.label);
+  } else if (btn.dataset.act === 'folder') {
+    const entry = nodeMap.get(btn.dataset.id);
+    if (entry) showFolder(entry.node);
+  }
+});
+
+$('home-view').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  if (btn.dataset.act === 'comp') {
+    showComponent(btn.dataset.id, btn.dataset.path, btn.dataset.label);
+  } else if (btn.dataset.act === 'folder') {
+    const entry = nodeMap.get(btn.dataset.id);
+    if (entry) showFolder(entry.node);
+  }
 });
 
 const restoreId = new URLSearchParams(location.search).get('id');
@@ -296,7 +445,5 @@ if (restoreId && nodeMap.has(restoreId)) {
   if (node.type === 'folder') showFolder(node);
   else showComponent(node.defaultFor || node.id, node.outputPath, node.label);
 } else {
-  const first = flattenComponents(TREE)[0];
-  if (first) showComponent(first.id, first.outputPath, first.label);
-  else showEmpty();
+  showHome();
 }
