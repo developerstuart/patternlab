@@ -1,0 +1,19 @@
+{
+  "title": "Pattern Lab",
+  "ui": {
+    "showThemeToggle": true,
+    "showViewportControls": true,
+    "enableResizeHandles": true
+  },
+  "css": {
+    "enabled": true,
+    "includeComponentFiles": true,
+    "baseFiles": [],
+    "loadPaths": []
+  },
+  "js": {
+    "enabled": true,
+    "includeComponentFiles": true,
+    "baseFiles": []
+  }
+}

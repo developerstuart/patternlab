@@ -50,7 +50,10 @@ test('build renders components from flat folder structure', { concurrency: false
   // index.html exists and contains the tree
   const indexHtml = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   assert.match(indexHtml, /Pattern Lab/);
+  assert.match(indexHtml, /v1\.0\.0/);
   assert.match(indexHtml, /TREE/);
+  assert.match(indexHtml, /id="variant-switch"/);
+  assert.match(indexHtml, /~default/);
   assert.match(indexHtml, /data-size="desktop"/);
   assert.match(indexHtml, /data-resize="right"/);
 
@@ -119,5 +122,25 @@ test('build component mode rerenders only affected component pages', { concurren
   } finally {
     fs.writeFileSync(jsonPath, JSON.stringify(original, null, 2) + '\n', 'utf8');
     runBuild('--mode', 'component', '--source', 'atoms/button.json');
+  }
+});
+
+test('build merges global data from multiple src/data JSON files', { concurrency: false }, () => {
+  const componentPath = path.join(repoRoot, 'src', 'components', 'atoms', 'global-data-test.twig');
+  const dataAPath = path.join(repoRoot, 'src', 'data', 'z-test-site.json');
+  const dataBPath = path.join(repoRoot, 'src', 'data', 'z-test-brand.json');
+  fs.writeFileSync(componentPath, '<div>{{ site.name }} {{ brand.color }}</div>\n', 'utf8');
+  fs.writeFileSync(dataAPath, JSON.stringify({ site: { name: 'Lab Test' } }, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(dataBPath, JSON.stringify({ brand: { color: 'Blue' } }, null, 2) + '\n', 'utf8');
+
+  try {
+    runBuild();
+    const html = fs.readFileSync(path.join(repoRoot, 'dist', 'components', 'atoms', 'global-data-test.html'), 'utf8');
+    assert.match(html, /Lab Test Blue/);
+  } finally {
+    fs.rmSync(componentPath, { force: true });
+    fs.rmSync(dataAPath, { force: true });
+    fs.rmSync(dataBPath, { force: true });
+    runBuild();
   }
 });
