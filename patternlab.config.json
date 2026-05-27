@@ -1,19 +1,32 @@
 {
   "title": "Pattern Lab",
   "ui": {
+    "showModeToggle": true,
     "showThemeToggle": true,
+    "themes": [
+      "default",
+      "alternative",
+      "grey"
+    ],
     "showViewportControls": true,
     "enableResizeHandles": true
   },
   "css": {
     "enabled": true,
     "includeComponentFiles": true,
+    "entryFile": "src/scss/style.scss",
+    "outputFile": "app.css",
     "baseFiles": [],
     "loadPaths": []
   },
   "js": {
+    "compiler": "esbuild",
     "enabled": true,
+    "bundle": true,
     "includeComponentFiles": true,
+    "entryFile": null,
+    "outputFile": "app.js",
+    "targetQuery": "last 2 versions",
     "baseFiles": []
   }
 }

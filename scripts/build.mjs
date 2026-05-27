@@ -1,9 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPatternlabConfig } from "./lib/config.mjs";
 import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
+import { pathToFileURL } from "url";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,11 @@ const distRoot = path.join(repoRoot, "dist");
 const phpRenderer = path.join(repoRoot, "php", "render.php");
 const templatesRoot = path.join(repoRoot, "scripts", "templates");
 const patternlabConfig = loadPatternlabConfig(repoRoot);
+const cssOutputFile = patternlabConfig.css.outputFile;
+const jsOutputFile = patternlabConfig.js.outputFile;
+for (const warning of patternlabConfig._meta?.configWarnings ?? []) {
+  console.warn(`[patternlab.config] ${warning}`);
+}
 
 const argv = process.argv.slice(2);
 const getArgValue = (name) => {
@@ -26,6 +32,13 @@ const getArgValue = (name) => {
 };
 const buildMode = getArgValue("--mode") ?? "full"; // full | styles | component
 const changedSource = getArgValue("--source");
+const requestedConcurrency = Number(
+  getArgValue("--concurrency") ?? process.env.PL_RENDER_CONCURRENCY ?? 4,
+);
+const renderConcurrency =
+  Number.isFinite(requestedConcurrency) && requestedConcurrency > 0
+    ? Math.floor(requestedConcurrency)
+    : 4;
 
 // ─── Supported template engines ───────────────────────────────────────────────
 
@@ -41,10 +54,21 @@ const TEMPLATE_EXTS = new Map([
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 const toPosix = (v) => v.split(path.sep).join("/");
+const toPublicAssetPath = (value) =>
+  `/${toPosix(String(value).replace(/^\/+/, ""))}`;
 
 const writeFile = (filePath, content) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf8");
+};
+
+const getMtimeMs = (filePath) => {
+  if (!filePath || !fs.existsSync(filePath)) return 0;
+  try {
+    return fs.statSync(filePath).mtimeMs;
+  } catch {
+    return 0;
+  }
 };
 
 const copyDir = (src, dest) => {
@@ -83,6 +107,27 @@ const readMeta = (filePath) => {
   return parseFrontmatter(fs.readFileSync(filePath, "utf8")).meta;
 };
 
+const readFolderMeta = (dirPath) => {
+  const canonical = path.join(dirPath, "_meta.md");
+  if (fs.existsSync(canonical)) return readMeta(canonical);
+
+  const folderNamed = path.join(dirPath, `_${path.basename(dirPath)}.md`);
+  if (fs.existsSync(folderNamed)) return readMeta(folderNamed);
+
+  const fallback = fs
+    .readdirSync(dirPath, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        entry.name.startsWith("_") &&
+        entry.name.endsWith(".md"),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name))[0];
+
+  if (!fallback) return {};
+  return readMeta(path.join(dirPath, fallback.name));
+};
+
 const readJson = (filePath) => {
   if (!fs.existsSync(filePath)) return null;
   try {
@@ -111,11 +156,32 @@ const escHtml = (value) =>
 // Lazy module cache
 const engines = {};
 
+const execFileUtf8 = (cmd, args) =>
+  new Promise((resolve, reject) => {
+    execFile(
+      cmd,
+      args,
+      { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+      (error, stdout, stderr) => {
+        if (error) {
+          error.stdout = stdout;
+          error.stderr = stderr;
+          reject(error);
+          return;
+        }
+        resolve(stdout);
+      },
+    );
+  });
+
 const renderTemplate = async (templatePath, engine, context) => {
   const template = fs.readFileSync(templatePath, "utf8");
 
   if (engine === "twig") {
-    const tmpCtx = path.join(distRoot, "_ctx.json");
+    const tmpCtx = path.join(
+      distRoot,
+      `_ctx-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    );
     fs.mkdirSync(distRoot, { recursive: true });
     fs.writeFileSync(tmpCtx, JSON.stringify(context), "utf8");
     const args = [
@@ -127,9 +193,19 @@ const renderTemplate = async (templatePath, engine, context) => {
       "--context",
       tmpCtx,
     ];
-    const html = execFileSync("php", args, { encoding: "utf8" });
-    fs.rmSync(tmpCtx, { force: true });
-    return html;
+    try {
+      return await execFileUtf8("php", args);
+    } catch (err) {
+      const stderr = err?.stderr ? String(err.stderr).trim() : "";
+      const stdout = err?.stdout ? String(err.stdout).trim() : "";
+      const details = [stderr, stdout].filter(Boolean).join("\n");
+      const relTemplatePath = toPosix(path.relative(repoRoot, templatePath));
+      throw new Error(
+        `Twig render failed for ${relTemplatePath}${details ? `\n${details}` : ""}`,
+      );
+    } finally {
+      fs.rmSync(tmpCtx, { force: true });
+    }
   }
 
   if (engine === "mustache") {
@@ -176,8 +252,9 @@ const buildComponentHead = (extraHead = "") => {
   const extra = trimmedExtra ? `\n${trimmedExtra}\n` : "\n";
   return `  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script>(function(){var t=localStorage.getItem('pl-theme');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');})()</script>
-  <link rel="stylesheet" href="/app.css">${extra}  <script src="/app.js" defer></script>`;
+  <script>(function(){var t=localStorage.getItem('pl-mode');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-mode','dark');})()</script>
+  <script>(function(){var t=localStorage.getItem('pl-theme');if(t)document.documentElement.setAttribute('data-theme',t);})()</script>
+  <link rel="stylesheet" href="${toPublicAssetPath(cssOutputFile)}">${extra}  <script src="${toPublicAssetPath(jsOutputFile)}" defer></script>`;
 };
 
 // Wrap rendered body in a minimal HTML page that includes app.css / app.js
@@ -194,6 +271,10 @@ window.addEventListener('message', function(e) {
     document.documentElement.setAttribute('data-theme', e.data.theme);
     localStorage.setItem('pl-theme', e.data.theme);
   }
+  if (e.data && e.data.type === 'pl-mode') {
+    document.documentElement.setAttribute('data-mode', e.data.mode);
+    localStorage.setItem('pl-mode', e.data.mode);
+  }
 });
 </script>
 </body>
@@ -207,14 +288,37 @@ window.addEventListener('message', function(e) {
  *   - children: sub-folder nodes + component nodes
  *   - _scss / _js: style and script files to bundle
  */
-const discoverDir = (dir, relPath, parentGlobal) => {
+const normalizeCardDisplay = (value) => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "normal" || normalized === "full" ? normalized : null;
+};
+
+const discoverDir = (
+  dir,
+  relPath,
+  parentGlobal,
+  parentCardDisplay = "normal",
+  inheritedGlobalJsonPaths = [],
+) => {
   if (!fs.existsSync(dir)) return null;
 
-  const folderMeta = readMeta(path.join(dir, "_meta.md"));
+  const folderMeta = readFolderMeta(dir);
+  const folderCardDisplay = normalizeCardDisplay(
+    folderMeta.card_display ??
+      folderMeta.cardDisplay ??
+      folderMeta["card-display"],
+  );
+  const effectiveFolderCardDisplay = folderCardDisplay ?? parentCardDisplay;
+  const localGlobalJsonPath = path.join(dir, "_global.json");
+  const hasLocalGlobalJson = fs.existsSync(localGlobalJsonPath);
   const folderGlobal = mergeDeep(
     parentGlobal,
-    readJson(path.join(dir, "_global.json")) ?? {},
+    readJson(localGlobalJsonPath) ?? {},
   );
+  const folderGlobalJsonPaths = hasLocalGlobalJson
+    ? [...inheritedGlobalJsonPaths, localGlobalJsonPath]
+    : inheritedGlobalJsonPaths;
 
   // Scan directory entries
   const templateFiles = new Map(); // stem → { fullPath, engine }
@@ -299,6 +403,12 @@ const discoverDir = (dir, relPath, parentGlobal) => {
     if (base.meta.hidden) continue;
     const compId = relPath ? `${relPath}/${stem}` : stem;
     const outBase = toPosix(path.join("components", relPath || "", stem));
+    const componentCardDisplay =
+      normalizeCardDisplay(
+        base.meta.card_display ??
+          base.meta.cardDisplay ??
+          base.meta["card-display"],
+      ) ?? effectiveFolderCardDisplay;
 
     const varNodes = [];
     for (const [varName, varData] of base.variations) {
@@ -308,6 +418,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
         type: "variation",
         id: varId,
         label: toLabel(varName),
+        cardDisplay: componentCardDisplay,
         outputPath: varOut,
         _render: {
           templatePath: varData.templatePath,
@@ -315,6 +426,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
           baseJsonPath: base.jsonPath,
           varJsonPath: varData.jsonPath,
           globalData: folderGlobal,
+          globalJsonPaths: folderGlobalJsonPaths,
         },
       });
     }
@@ -325,6 +437,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
       label: base.meta.title ?? toLabel(stem),
       order: base.meta.order ?? 999,
       hidden: false,
+      cardDisplay: componentCardDisplay,
       outputPath: `${outBase}.html`,
       variations: varNodes,
       _render: {
@@ -333,6 +446,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
         baseJsonPath: base.jsonPath,
         varJsonPath: null,
         globalData: folderGlobal,
+        globalJsonPaths: folderGlobalJsonPaths,
       },
     });
   }
@@ -341,7 +455,13 @@ const discoverDir = (dir, relPath, parentGlobal) => {
   const folderNodes = [];
   for (const { name, fullPath } of subDirs) {
     const childRel = relPath ? `${relPath}/${name}` : name;
-    const child = discoverDir(fullPath, childRel, folderGlobal);
+    const child = discoverDir(
+      fullPath,
+      childRel,
+      folderGlobal,
+      effectiveFolderCardDisplay,
+      folderGlobalJsonPaths,
+    );
     if (child && !child.hidden && child.children.length > 0)
       folderNodes.push(child);
   }
@@ -362,6 +482,7 @@ const discoverDir = (dir, relPath, parentGlobal) => {
     label: folderMeta.title ?? toLabel(path.basename(dir)),
     order: folderMeta.order ?? 999,
     hidden: folderMeta.hidden ?? false,
+    cardDisplay: effectiveFolderCardDisplay,
     folderPath: relPath || "",
     children: [...folderNodes, ...componentNodes],
     _scss: scssFiles,
@@ -388,6 +509,39 @@ const collectStyleAssets = (node, scss = [], js = []) => {
   if (node._js) js.push(...node._js);
   for (const child of node.children ?? []) collectStyleAssets(child, scss, js);
   return { scss, js };
+};
+
+const collectJsonFiles = (rootDir, out = []) => {
+  if (!fs.existsSync(rootDir)) return out;
+  let stat;
+  try {
+    stat = fs.statSync(rootDir);
+  } catch {
+    return out;
+  }
+  if (!stat.isDirectory()) return out;
+
+  for (const entry of fs
+    .readdirSync(rootDir, { withFileTypes: true })
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    const fullPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      collectJsonFiles(fullPath, out);
+      continue;
+    }
+    if (path.extname(entry.name) === ".json") out.push(fullPath);
+  }
+
+  return out;
+};
+
+const collectRootGlobalDependencyFiles = () => {
+  const files = [];
+  const legacyGlobalPath = path.join(srcRoot, "_global.json");
+  if (fs.existsSync(legacyGlobalPath)) files.push(legacyGlobalPath);
+  const dataDir = path.join(srcRoot, "data");
+  files.push(...collectJsonFiles(dataDir));
+  return files;
 };
 
 const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
@@ -422,8 +576,75 @@ const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
 
 // ─── SCSS / JS pipeline ───────────────────────────────────────────────────────
 
-const buildCss = async (styleFiles, loadPaths = []) => {
-  if (styleFiles.length === 0) return "";
+const buildCss = async ({
+  entryFile = null,
+  styleFiles = [],
+  loadPaths = [],
+} = {}) => {
+  if (!entryFile && styleFiles.length === 0) return "";
+
+  const collectScssFiles = (dir, out = []) => {
+    if (!fs.existsSync(dir)) return out;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        collectScssFiles(fullPath, out);
+      } else if (entry.isFile() && path.extname(entry.name) === ".scss") {
+        out.push(fullPath);
+      }
+    }
+    return out;
+  };
+
+  const globToRegExp = (globPattern) => {
+    const escaped = globPattern
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*\*/g, "__DOUBLE_STAR__")
+      .replace(/\*/g, "[^/]*")
+      .replace(/__DOUBLE_STAR__/g, ".*");
+    return new RegExp(`^${escaped}$`);
+  };
+
+  const sassModulePath = (scssRelPath) => {
+    const posixRel = toPosix(scssRelPath);
+    const withoutExt = posixRel.replace(/\.scss$/, "");
+    return withoutExt
+      .split("/")
+      .map((segment) => (segment.startsWith("_") ? segment.slice(1) : segment))
+      .join("/");
+  };
+
+  const expandSassModuleGlobs = (source, baseDir) =>
+    source.replace(
+      /^([ \t]*)@(use|forward)\s+["']([^"']*\*[^"']*)["']([^;]*);[ \t]*$/gm,
+      (full, indent, kind, importPath, tail) => {
+        const matcher = globToRegExp(importPath);
+        const absolutePattern = path.resolve(baseDir, importPath);
+        const wildcardIndex = absolutePattern.search(/[*]/);
+        const patternPrefix =
+          wildcardIndex === -1
+            ? absolutePattern
+            : absolutePattern.slice(0, wildcardIndex);
+        const searchRoot = path.dirname(patternPrefix);
+
+        const resolved = collectScssFiles(searchRoot)
+          .map((filePath) => toPosix(path.relative(baseDir, filePath)))
+          .filter((relPath) => matcher.test(relPath))
+          .sort((a, b) => a.localeCompare(b));
+
+        if (resolved.length === 0) {
+          return full;
+        }
+
+        return resolved
+          .map(
+            (relPath) =>
+              `${indent}@${kind} "${sassModulePath(relPath)}"${tail};`,
+          )
+          .join("\n");
+      },
+    );
+
   const combined = styleFiles
     .map(
       (f) =>
@@ -440,6 +661,44 @@ const buildCss = async (styleFiles, loadPaths = []) => {
       throw new Error("Sass compiler API not found");
     }
 
+    if (entryFile) {
+      const expandedEntry = expandSassModuleGlobs(
+        fs.readFileSync(entryFile, "utf8"),
+        path.dirname(entryFile),
+      );
+
+      const result = sass.compileString(expandedEntry, {
+        url: pathToFileURL(entryFile),
+        loadPaths: [componentsRoot, srcRoot, ...loadPaths],
+        style: "expanded",
+        charset: false,
+        importers: [
+          {
+            findFileUrl(url) {
+              if (!url.startsWith("@")) {
+                return null;
+              }
+              return pathToFileURL(
+                path.resolve(
+                  fileURLToPath(import.meta.url),
+                  `${srcRoot}/scss/generic/_${url.slice(1)}.scss`,
+                ),
+              );
+            },
+          },
+        ],
+      });
+
+      const cssExtras = styleFiles
+        .filter((filePath) => path.extname(filePath) === ".css")
+        .map(
+          (filePath) =>
+            `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${fs.readFileSync(filePath, "utf8")}`,
+        );
+
+      return [result.css, ...cssExtras].filter(Boolean).join("\n\n");
+    }
+
     const compiled = styleFiles.map((filePath) => {
       const ext = path.extname(filePath);
       if (ext === ".css") {
@@ -448,6 +707,22 @@ const buildCss = async (styleFiles, loadPaths = []) => {
       const result = sass.compile(filePath, {
         loadPaths: [componentsRoot, srcRoot, ...loadPaths],
         style: "expanded",
+        charset: false,
+        importers: [
+          {
+            findFileUrl(url) {
+              if (!url.startsWith("@")) {
+                return null;
+              }
+              return pathToFileURL(
+                path.resolve(
+                  fileURLToPath(import.meta.url),
+                  `${srcRoot}/scss/generic/_${url.slice(1)}.scss`,
+                ),
+              );
+            },
+          },
+        ],
       });
       return `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${result.css}`;
     });
@@ -460,15 +735,78 @@ const buildCss = async (styleFiles, loadPaths = []) => {
   }
 };
 
-const buildJs = (jsFiles) =>
-  jsFiles.length === 0
-    ? ""
-    : jsFiles
-        .map(
-          (f) =>
-            `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
-        )
-        .join("\n\n");
+const buildJs = async (
+  jsFiles,
+  { bundle = true, target = ["es2020"], compiler = "esbuild" } = {},
+) => {
+  if (jsFiles.length === 0) return "";
+
+  const combined = jsFiles
+    .map(
+      (f) =>
+        `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
+    )
+    .join("\n\n");
+
+  if (!bundle) {
+    return combined;
+  }
+
+  if (compiler !== "esbuild") {
+    throw new Error(
+      `Unsupported js compiler \"${compiler}\". Supported values: esbuild`,
+    );
+  }
+
+  const bundleEntry = `${jsFiles
+    .map((filePath) => {
+      const rel = toPosix(path.relative(repoRoot, filePath));
+      const specifier = rel.startsWith(".") ? rel : `./${rel}`;
+      return `import ${JSON.stringify(specifier)};`;
+    })
+    .join("\n")}\n`;
+
+  try {
+    const esbuildModule = await import("esbuild");
+    const esbuild =
+      typeof esbuildModule.build === "function"
+        ? esbuildModule
+        : esbuildModule.default;
+    if (!esbuild || typeof esbuild.build !== "function") {
+      throw new Error("esbuild API not found");
+    }
+
+    const result = await esbuild.build({
+      stdin: {
+        contents: bundleEntry,
+        resolveDir: repoRoot,
+        sourcefile: "_app.entry.mjs",
+        loader: "js",
+      },
+      bundle: true,
+      platform: "browser",
+      format: "iife",
+      target,
+      write: false,
+      logLevel: "silent",
+      legalComments: "none",
+    });
+
+    const jsOutput =
+      result.outputFiles && result.outputFiles.length > 0
+        ? result.outputFiles[0].text
+        : "";
+    if (!jsOutput) throw new Error("esbuild produced no output");
+    return jsOutput;
+  } catch (err) {
+    console.warn(
+      `JS bundle failed; using raw concatenated scripts. ${err?.message ?? ""}`.trim(),
+    );
+    return combined;
+  } finally {
+    // no-op
+  }
+};
 
 // ─── Strip internal _* fields before serialising ──────────────────────────────
 
@@ -498,7 +836,10 @@ const readTemplate = (name) =>
 
 const buildIndexHtml = (publicTree, totalCount) => {
   const safeTree = JSON.stringify(publicTree).replace(/<\//g, "<\\/");
-  const safeUiConfig = JSON.stringify(patternlabConfig.ui).replace(/<\//g, "<\\/");
+  const safeUiConfig = JSON.stringify(patternlabConfig.ui).replace(
+    /<\//g,
+    "<\\/",
+  );
   const indexCss = readTemplate("index.css");
   const indexJs = readTemplate("index.js")
     .replace("__TREE_JSON__", safeTree)
@@ -508,7 +849,11 @@ const buildIndexHtml = (publicTree, totalCount) => {
     .replace(/__HEADER_TITLE__/g, escHtml(patternlabConfig.title))
     .replace(
       /__HEADER_VERSION__/g,
-      escHtml(patternlabConfig.packageVersion ? `v${patternlabConfig.packageVersion}` : ""),
+      escHtml(
+        patternlabConfig.packageVersion
+          ? `v${patternlabConfig.packageVersion}`
+          : "",
+      ),
     )
     .replace(/__TOTAL_COUNT__/g, String(totalCount))
     .replace(/__TOTAL_SUFFIX__/g, totalCount !== 1 ? "s" : "")
@@ -520,7 +865,7 @@ const buildIndexHtml = (publicTree, totalCount) => {
 
 const discover = () => {
   const globalData = loadRootGlobalData(srcRoot);
-  const tree = discoverDir(componentsRoot, "", globalData);
+  const tree = discoverDir(componentsRoot, "", globalData, "normal");
   if (!tree) {
     console.error("No components found under src/components/");
     process.exit(1);
@@ -529,25 +874,47 @@ const discover = () => {
 };
 
 const writeCssJs = async (tree) => {
-  const { scss: componentScssFiles, js: componentJsFiles } = collectStyleAssets(tree);
+  const { scss: componentScssFiles, js: componentJsFiles } =
+    collectStyleAssets(tree);
+  const mainStyleEntry = patternlabConfig.css.entryFile;
+  const hasMainStyleEntry = Boolean(mainStyleEntry);
   const cssFiles = [
     ...(patternlabConfig.css.includeComponentFiles ? componentScssFiles : []),
     ...patternlabConfig.css.baseFiles,
   ];
+  const cssFilesWithoutEntry = hasMainStyleEntry
+    ? cssFiles.filter(
+        (filePath) => path.resolve(filePath) !== path.resolve(mainStyleEntry),
+      )
+    : cssFiles;
   const jsFiles = [
+    ...(patternlabConfig.js.entryFile ? [patternlabConfig.js.entryFile] : []),
     ...(patternlabConfig.js.includeComponentFiles ? componentJsFiles : []),
     ...patternlabConfig.js.baseFiles,
   ];
+  const dedupedJsFiles = [
+    ...new Set(jsFiles.map((filePath) => path.resolve(filePath))),
+  ];
   const css = patternlabConfig.css.enabled
-    ? await buildCss(cssFiles, patternlabConfig.css.loadPaths)
+    ? await buildCss({
+        entryFile: hasMainStyleEntry ? mainStyleEntry : null,
+        styleFiles: hasMainStyleEntry ? cssFilesWithoutEntry : cssFiles,
+        loadPaths: patternlabConfig.css.loadPaths,
+      })
     : "";
   writeFile(
-    path.join(distRoot, "app.css"),
+    path.join(distRoot, ...cssOutputFile.split("/")),
     css || "/* no component styles */\n",
   );
-  const js = patternlabConfig.js.enabled ? buildJs(jsFiles) : "";
+  const js = patternlabConfig.js.enabled
+    ? await buildJs(dedupedJsFiles, {
+        compiler: patternlabConfig.js.compiler,
+        bundle: patternlabConfig.js.bundle !== false,
+        target: patternlabConfig.js.target,
+      })
+    : "";
   writeFile(
-    path.join(distRoot, "app.js"),
+    path.join(distRoot, ...jsOutputFile.split("/")),
     js || "/* no component scripts */\n",
   );
 };
@@ -557,41 +924,72 @@ const renderAll = async (tree) => {
   const componentHeadExtra = readText(
     path.join(srcRoot, "_component-head.html"),
   );
-  for (const item of renderables) {
-    const html = await renderItem(item, componentHeadExtra);
-    const outPath = path.join(distRoot, ...item.outputPath.split("/"));
-    writeFile(outPath, html);
-  }
+  const total = renderables.length;
+  const workerCount = Math.max(1, Math.min(renderConcurrency, total));
+  let nextIndex = 0;
+  let rendered = 0;
+
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= total) return;
+
+      const item = renderables[index];
+      const html = await renderItem(item, componentHeadExtra);
+      const outPath = path.join(distRoot, ...item.outputPath.split("/"));
+      writeFile(outPath, html);
+      rendered += 1;
+      console.log(
+        `[${rendered}/${total}] Rendered ${item.id} → ${toPosix(path.relative(distRoot, outPath))}`,
+      );
+    }
+  };
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
   return renderables;
 };
 
+const writeSharedArtifacts = async (tree, renderables) => {
+  await writeCssJs(tree);
+  copyDir(assetsRoot, path.join(distRoot, "assets"));
+
+  const publicTree = stripPrivate(tree);
+  writeFile(
+    path.join(distRoot, "tree.json"),
+    JSON.stringify(publicTree, null, 2) + "\n",
+  );
+
+  const manifest = renderables.map(({ id, label, type, outputPath }) => ({
+    id,
+    label,
+    type,
+    outputPath,
+  }));
+  writeFile(
+    path.join(distRoot, "components.json"),
+    JSON.stringify(manifest, null, 2) + "\n",
+  );
+
+  writeFile(
+    path.join(distRoot, "index.html"),
+    buildIndexHtml(publicTree, renderables.length),
+  );
+};
+
 const main = async () => {
+  console.log(
+    `Building pattern library (mode: ${buildMode}, render concurrency: ${renderConcurrency})...`,
+  );
   if (buildMode === "full") {
     fs.rmSync(distRoot, { recursive: true, force: true });
     fs.mkdirSync(distRoot, { recursive: true });
+    console.log("Discovering components...");
     const tree = discover();
+    console.log("Rendering components...");
     const renderables = await renderAll(tree);
-    await writeCssJs(tree);
-    copyDir(assetsRoot, path.join(distRoot, "assets"));
-    const publicTree = stripPrivate(tree);
-    writeFile(
-      path.join(distRoot, "tree.json"),
-      JSON.stringify(publicTree, null, 2) + "\n",
-    );
-    const manifest = renderables.map(({ id, label, type, outputPath }) => ({
-      id,
-      label,
-      type,
-      outputPath,
-    }));
-    writeFile(
-      path.join(distRoot, "components.json"),
-      JSON.stringify(manifest, null, 2) + "\n",
-    );
-    writeFile(
-      path.join(distRoot, "index.html"),
-      buildIndexHtml(publicTree, renderables.length),
-    );
+    console.log("Building shared assets and index...");
+    await writeSharedArtifacts(tree, renderables);
     console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
     return;
   }
@@ -600,7 +998,55 @@ const main = async () => {
     fs.mkdirSync(distRoot, { recursive: true });
     const tree = discover();
     await writeCssJs(tree);
-    console.log(`Rebuilt app.css/app.js in ${distRoot}`);
+    console.log(`Rebuilt ${cssOutputFile} and ${jsOutputFile} in ${distRoot}`);
+    return;
+  }
+
+  if (buildMode === "modified-components") {
+    fs.mkdirSync(distRoot, { recursive: true });
+    const tree = discover();
+    const renderables = flattenRenderables(tree);
+    const componentHeadPath = path.join(srcRoot, "_component-head.html");
+    const componentHeadExtra = readText(componentHeadPath);
+    const rootGlobalDependencyFiles = collectRootGlobalDependencyFiles();
+    let renderedCount = 0;
+
+    for (const item of renderables) {
+      const outPath = path.join(distRoot, ...item.outputPath.split("/"));
+      const outputMtime = getMtimeMs(outPath);
+      const dependencyFiles = [
+        item._render.templatePath,
+        item._render.baseJsonPath,
+        item._render.varJsonPath,
+        ...(item._render.globalJsonPaths ?? []),
+        ...rootGlobalDependencyFiles,
+        componentHeadPath,
+      ].filter(Boolean);
+      const newestDependencyMtime = Math.max(
+        ...dependencyFiles.map((filePath) => getMtimeMs(filePath)),
+        0,
+      );
+
+      if (outputMtime > 0 && newestDependencyMtime <= outputMtime) continue;
+
+      const html = await renderItem(item, componentHeadExtra);
+      writeFile(outPath, html);
+      renderedCount += 1;
+      console.log(
+        `[${renderedCount}] Re-rendered ${item.id} → ${toPosix(path.relative(distRoot, outPath))}`,
+      );
+    }
+
+    if (renderedCount === 0) {
+      console.log("No component updates required since last build");
+    } else {
+      console.log(
+        `Re-rendered ${renderedCount} component page(s) based on source changes`,
+      );
+    }
+
+    console.log("Building shared assets and index...");
+    await writeSharedArtifacts(tree, renderables);
     return;
   }
 

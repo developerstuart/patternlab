@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Twig\Environment;
+
 function parseArgs(array $argv): array
 {
     $out = [];
@@ -91,6 +93,23 @@ function fallbackRender(string $templatePath, array $context, string $components
     return $template;
 }
 
+function applyAlterTwig(Environment $twig, array $config): void
+{
+    $alterTwigPath = __DIR__ . DIRECTORY_SEPARATOR . 'alter-twig.php';
+    if (!is_file($alterTwigPath)) {
+        return;
+    }
+
+    require_once $alterTwigPath;
+
+    if (function_exists('addCustomExtension')) {
+        addCustomExtension($twig, $config);
+        return;
+    }
+
+    throw new RuntimeException('Found php/alter-twig.php but no addCustomExtension(Environment &$env, $config) function was defined.');
+}
+
 $options = parseArgs($argv);
 $templatePath = $options['template'] ?? '';
 $contextPath = $options['context'] ?? '';
@@ -108,12 +127,27 @@ if (is_file($composerAutoload)) {
     require_once $composerAutoload;
 
     if (class_exists('Twig\\Loader\\FilesystemLoader') && class_exists('Twig\\Environment')) {
-        $loader = new Twig\Loader\FilesystemLoader($componentsRoot);
-        $twig = new Twig\Environment($loader, ['cache' => false, 'autoescape' => 'html']);
-        $templateName = str_replace(DIRECTORY_SEPARATOR, '/', ltrim(str_replace($componentsRoot, '', $templatePath), DIRECTORY_SEPARATOR));
-        echo $twig->render($templateName, $context);
-        exit(0);
+        try {
+            $loader = new Twig\Loader\FilesystemLoader($componentsRoot);
+            // Pattern data often includes trusted HTML/SVG snippets that should render as markup.
+            $twig = new Twig\Environment($loader, ['cache' => false, 'autoescape' => false]);
+            applyAlterTwig($twig, [
+                'template_path' => $templatePath,
+                'components_root' => $componentsRoot,
+                'context_path' => $contextPath,
+                'context' => $context,
+                'repo_root' => dirname(__DIR__),
+            ]);
+            $templateName = str_replace(DIRECTORY_SEPARATOR, '/', ltrim(str_replace($componentsRoot, '', $templatePath), DIRECTORY_SEPARATOR));
+            echo $twig->render($templateName, $context);
+            exit(0);
+        } catch (Throwable $e) {
+            fwrite(STDERR, 'Twig renderer error: ' . $e->getMessage() . PHP_EOL);
+            exit(1);
+        }
     }
+
+    fwrite(STDERR, "Twig classes not available from Composer autoload; using fallback renderer\n");
 }
 
 echo fallbackRender($templatePath, $context, $componentsRoot);
