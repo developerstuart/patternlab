@@ -6,7 +6,9 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "serve": "node scripts/serve.mjs",
-    "dev": "node scripts/serve.mjs --watch",
+    "dev": "node scripts/serve.mjs --watch --since-last-build",
+    "dev:full": "node scripts/serve.mjs --watch",
+    "dev:styles": "node scripts/serve.mjs --watch --styles",
     "test": "node --test"
   },
   "keywords": [
@@ -16,6 +18,9 @@
   ],
   "license": "ISC",
   "devDependencies": {
+    "browserslist": "^4.28.2",
+    "browserslist-to-esbuild": "^2.1.1",
+    "esbuild": "^0.28.0",
     "liquidjs": "^10.27.0",
     "mustache": "^4.2.0",
     "nunjucks": "^3.2.4",

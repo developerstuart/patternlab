@@ -58,18 +58,20 @@ src/
 npm run build     # Build dist/
 npm run serve     # Serve dist/ at http://localhost:3000
 npm run dev       # Serve with watch + live reload
+npm run dev:changed # Watch mode; only rerender components modified since last build
 ```
 
 Open `http://localhost:3000` to browse and preview components.
 
 ## Scripts
 
-| Command | Description |
-|---|---|
-| `npm run build` | Walk `src/components/`, render templates, compile SCSS, copy assets |
-| `npm run serve` | Serve `dist/` on port 3000 (env `PORT` overrides) |
-| `npm run dev` | Run dev server with src watcher, incremental rebuilds, and live reload |
-| `npm test` | Run integration tests |
+| Command               | Description                                                              |
+| --------------------- | ------------------------------------------------------------------------ |
+| `npm run build`       | Walk `src/components/`, render templates, compile SCSS, copy assets      |
+| `npm run serve`       | Serve `dist/` on port 3000 (env `PORT` overrides)                        |
+| `npm run dev`         | Run dev server with src watcher, incremental rebuilds, and live reload   |
+| `npm run dev:changed` | Start dev mode and only rerender components changed since the last build |
+| `npm test`            | Run integration tests                                                    |
 
 ## `patternlab.config.json`
 
@@ -77,10 +79,43 @@ Use `patternlab.config.json` in the repository root to control:
 
 - `title` (displayed in Pattern Lab header)
 - `ui.showThemeToggle`, `ui.showViewportControls`, `ui.enableResizeHandles`
-- `css.enabled`, `css.includeComponentFiles`, `css.baseFiles`, `css.loadPaths`
-- `js.enabled`, `js.includeComponentFiles`, `js.baseFiles`
+- `css.enabled`, `css.includeComponentFiles`, `css.entryFile`, `css.outputFile`, `css.baseFiles`, `css.loadPaths`
+- `js.compiler`, `js.enabled`, `js.bundle`, `js.includeComponentFiles`, `js.entryFile`, `js.outputFile`, `js.targetQuery`, `js.target`, `js.baseFiles`
 
 The package version from `package.json` is appended automatically in the header.
+
+### JS bundling toggle
+
+Use `js.bundle` to control whether `dist/app.js` is browser-bundled or raw-concatenated:
+
+- `true` (default): bundles component and base JS with import resolution (recommended).
+- `false`: concatenates raw files without resolving `import` statements (legacy mode).
+
+Example:
+
+```json
+{
+  "js": {
+    "compiler": "esbuild",
+    "enabled": true,
+    "bundle": true,
+    "includeComponentFiles": true,
+    "entryFile": null,
+    "outputFile": "app.js",
+    "targetQuery": "last 2 versions",
+    "baseFiles": []
+  }
+}
+```
+
+### Browser target and output file customization
+
+- `js.compiler` currently supports `esbuild` and is validated during config load.
+- Use `js.targetQuery` for Browserslist queries (for example, `last 2 versions`).
+- Use `js.target` for explicit esbuild targets (`["chrome124","firefox126","safari17"]`).
+- Use `css.outputFile` / `js.outputFile` to change emitted asset names and paths under `dist/`.
+- Use `css.entryFile` / `js.entryFile` to configure custom primary entry files.
+- Invalid `js.targetQuery` values print a warning and fall back to `es2020`.
 
 ## Adding a new section
 
