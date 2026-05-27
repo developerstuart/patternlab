@@ -10,7 +10,7 @@ import { createIncrementalRebuilder } from './lib/serve/incremental.mjs';
 import { contentType, isTemplateExt, loadLiveReloadSnippet } from './lib/serve-utils.mjs';
 
 const runtimeContext = createRuntimeContext({ scriptUrl: import.meta.url });
-const { repoRoot, argv, patternlabConfig, client, paths } = runtimeContext;
+const { repoRoot, argv, patternlabConfig, paths } = runtimeContext;
 const { srcRoot, componentsRoot, assetsRoot, distRoot } = paths;
 const buildScript = path.join(repoRoot, 'scripts', 'build.mjs');
 const port = Number(process.env.PORT || patternlabConfig.server?.port || 3000);
@@ -28,7 +28,6 @@ for (const warning of patternlabConfig._meta?.configWarnings ?? []) {
 const runBuild = (args = []) =>
   new Promise((resolve, reject) => {
     const childArgs = [buildScript, ...args];
-    if (client) childArgs.push('--client', client);
     const child = spawn('node', childArgs, {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -21,35 +21,6 @@ test('config exposes expanded skeleton surface for defaults', () => {
   assert.ok(Array.isArray(cfg.plugins));
 });
 
-test('config supports client profile override composition', () => {
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'patternlab-config-'));
-  fs.mkdirSync(path.join(tmpRoot, 'src', 'components'), { recursive: true });
-  fs.mkdirSync(path.join(tmpRoot, 'scripts', 'templates'), { recursive: true });
-  fs.writeFileSync(path.join(tmpRoot, 'package.json'), JSON.stringify({ name: 'x', version: '2.1.0' }));
-  fs.writeFileSync(
-    path.join(tmpRoot, 'patternlab.config.json'),
-    JSON.stringify(
-      {
-        title: 'Base',
-        clients: {
-          acme: {
-            title: 'Acme',
-            paths: { srcRoot: 'src' },
-            output: { componentsDir: 'client-components' },
-          },
-        },
-      },
-      null,
-      2,
-    ),
-  );
-
-  const cfg = loadPatternlabConfig(tmpRoot, { client: 'acme' });
-  assert.equal(cfg.title, 'Acme');
-  assert.equal(cfg.output.componentsDir, 'client-components');
-  assert.equal(cfg.packageVersion, '2.1.0');
-});
-
 test('plugin hooks run in order and can transform payload', async () => {
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'patternlab-plugin-'));
   const pluginPath = path.join(tmpRoot, 'plugin.mjs');

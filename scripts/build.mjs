@@ -27,10 +27,7 @@ const getArgValue = (name) => {
   if (i < 0) return null;
   return argv[i + 1] ?? null;
 };
-const clientProfile = getArgValue("--client");
-const patternlabConfig = loadPatternlabConfig(repoRoot, {
-  client: clientProfile,
-});
+const patternlabConfig = loadPatternlabConfig(repoRoot);
 const srcRoot = patternlabConfig.paths.srcRoot;
 const componentsRoot = patternlabConfig.paths.componentsRoot;
 const assetsRoot = patternlabConfig.paths.assetsRoot;
@@ -953,11 +950,10 @@ const main = async () => {
   await hooks.run("beforeBuild", {
     buildMode,
     changedSource,
-    client: clientProfile,
     patternlabConfig,
   });
   console.log(
-    `Building pattern library (mode: ${buildMode}, render concurrency: ${renderConcurrency}${clientProfile ? `, client: ${clientProfile}` : ""})...`,
+    `Building pattern library (mode: ${buildMode}, render concurrency: ${renderConcurrency})...`,
   );
   if (buildMode === "full") {
     fs.rmSync(distRoot, { recursive: true, force: true });
@@ -972,7 +968,6 @@ const main = async () => {
     await hooks.run("afterBuild", {
       buildMode,
       changedSource,
-      client: clientProfile,
       patternlabConfig,
       result: { renderablesCount: renderables.length },
     });
@@ -987,7 +982,6 @@ const main = async () => {
     await hooks.run("afterBuild", {
       buildMode,
       changedSource,
-      client: clientProfile,
       patternlabConfig,
       result: {},
     });
@@ -1042,7 +1036,6 @@ const main = async () => {
     await hooks.run("afterBuild", {
       buildMode,
       changedSource,
-      client: clientProfile,
       patternlabConfig,
       result: { renderablesCount: renderables.length },
     });
@@ -1070,7 +1063,6 @@ const main = async () => {
     await hooks.run("afterBuild", {
       buildMode,
       changedSource,
-      client: clientProfile,
       patternlabConfig,
       result: { renderablesCount: ids.length },
     });

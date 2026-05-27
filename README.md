@@ -87,7 +87,6 @@ Use `patternlab.config.json` in the repository root to control:
 - `output.componentsDir`, `output.treeFile`, `output.manifestFile`, `output.indexFile`
 - `ui.preview.viewportPresets`, `ui.preview.normalHeight`, `ui.preview.fullWidth`, `ui.preview.fullHeight`, `ui.preview.fullMinHeight`, `ui.preview.fullMaxHeight`
 - `plugins` lifecycle extensions
-- `clients` client-specific config overrides used with `--client <name>`
 
 The package version from `package.json` is appended automatically in the header.
 
@@ -136,7 +135,7 @@ This project is intended to stay a reusable core skeleton:
    - Serve + live-reload with incremental rebuild support.
 2. **Stable public surface**
    - `patternlab.config.json` keys documented in this README.
-   - CLI contract: `build`, `serve`, `dev` scripts and optional `--client`.
+   - CLI contract: `build`, `serve`, `dev` scripts.
    - Plugin hook names in `scripts/lib/plugins.mjs`.
 3. **Backward compatibility**
    - Existing default folder layout continues to work (`src/components`, `src/data`, `src/assets`, `dist`).
@@ -155,32 +154,10 @@ This project is intended to stay a reusable core skeleton:
   - `plugins: ["relative/path/to/plugin.mjs"]`
   - Hooks: `beforeBuild`, `afterBuild`, `beforeDiscover`, `afterDiscover`, `beforeRenderItem`, `afterRenderItem`, `beforeWriteArtifacts`, `afterWriteArtifacts`, `beforeClassifyChange`, `afterClassifyChange`
 
-## Client builds while keeping core updatable
-
-Use `clients` in `patternlab.config.json` to keep client code in-repo while preserving a shared core:
-
-- Keep shared defaults at root config.
-- Add client-specific overrides under `clients.<name>`.
-- Build or serve a client profile with:
-  - `node scripts/build.mjs --client acme`
-  - `node scripts/serve.mjs --watch --client acme`
-
-Recommended structure:
-
-```text
-clients/
-  acme/
-    src/...
-  beta/
-    src/...
-```
-
-Each client can override paths, assets, plugins, preview behavior, template engines, and output layout without forking core scripts.
-
 ## Migration notes
 
 - `dev:changed` was removed; use `npm run dev` (incremental) or `npm run dev:full`.
-- Config now supports path/output/templating/plugin/client groups. Existing configs remain valid with defaults.
+- Config now supports path/output/templating/plugin groups. Existing configs remain valid with defaults.
 - Twig alteration remains optional; configure custom file via `templating.twig.alterFile`.
 
 ## Adding a new section

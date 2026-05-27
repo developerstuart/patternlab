@@ -88,7 +88,6 @@ const DEFAULT_CONFIG = {
     port: 3000,
   },
   plugins: [],
-  clients: {},
   build: {
     renderConcurrency: 4,
   },
@@ -213,26 +212,17 @@ const resolvePathStructure = (repoRoot, pathsConfig, configWarnings) => {
   };
 };
 
-const resolveClientConfig = (fullConfig, client) => {
-  if (!client) return fullConfig;
-  const entry = fullConfig.clients?.[client];
-  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
-    return fullConfig;
-  }
-  return mergeDeep(fullConfig, entry);
-};
-
-export const loadPatternlabConfig = (repoRoot, { client = null } = {}) => {
+export const loadPatternlabConfig = (repoRoot) => {
   const configPath = path.join(repoRoot, 'patternlab.config.json');
   const loaded = readJsonSafe(configPath) ?? {};
   const pkg = readJsonSafe(path.join(repoRoot, 'package.json')) ?? {};
-  const clientMerged = resolveClientConfig(mergeDeep(DEFAULT_CONFIG, loaded), client);
+  const merged = mergeDeep(DEFAULT_CONFIG, loaded);
   const configWarnings = [];
 
-  const pathConfig = resolvePathStructure(repoRoot, clientMerged.paths ?? {}, configWarnings);
+  const pathConfig = resolvePathStructure(repoRoot, merged.paths ?? {}, configWarnings);
 
-  const cssBaseCandidates = normalizePathList(repoRoot, clientMerged.css?.baseFiles);
-  const jsBaseCandidates = normalizePathList(repoRoot, clientMerged.js?.baseFiles);
+  const cssBaseCandidates = normalizePathList(repoRoot, merged.css?.baseFiles);
+  const jsBaseCandidates = normalizePathList(repoRoot, merged.js?.baseFiles);
 
   const cssBaseFiles = cssBaseCandidates.flatMap((candidate) =>
     collectFilesByExtension(candidate, new Set(['.scss', '.css'])),
@@ -241,77 +231,72 @@ export const loadPatternlabConfig = (repoRoot, { client = null } = {}) => {
     collectFilesByExtension(candidate, new Set(['.js', '.mjs', '.cjs'])),
   );
 
-  const cssLoadPaths = normalizePathList(repoRoot, clientMerged.css?.loadPaths).filter(
+  const cssLoadPaths = normalizePathList(repoRoot, merged.css?.loadPaths).filter(
     (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isDirectory(),
   );
 
   const { compiler: jsCompiler, warning: jsCompilerWarning } =
-    normalizeJsCompiler(clientMerged.js?.compiler);
+    normalizeJsCompiler(merged.js?.compiler);
   if (jsCompilerWarning) configWarnings.push(jsCompilerWarning);
 
-  const { target: jsTargets, warnings: jsTargetWarnings } = resolveJsTargets(clientMerged.js);
+  const { target: jsTargets, warnings: jsTargetWarnings } = resolveJsTargets(merged.js);
   configWarnings.push(...jsTargetWarnings);
 
   const templateEngines = sanitizeTemplateEngines(
-    clientMerged.templating?.engines,
+    merged.templating?.engines,
     configWarnings,
   );
 
-  const resolvedPlugins = normalizePlugins(clientMerged.plugins, configWarnings);
-
-  if (client && !clientMerged.clients?.[client]) {
-    configWarnings.push(`Requested unknown client profile "${client}". Using base config.`);
-  }
+  const resolvedPlugins = normalizePlugins(merged.plugins, configWarnings);
 
   return {
-    ...clientMerged,
+    ...merged,
     packageVersion: typeof pkg.version === 'string' ? pkg.version : '',
-    client,
     paths: {
-      ...clientMerged.paths,
+      ...merged.paths,
       ...pathConfig,
     },
     templating: {
-      ...clientMerged.templating,
+      ...merged.templating,
       engines: templateEngines,
       twig: {
-        ...clientMerged.templating?.twig,
-        alterFile: resolveOptionalFile(repoRoot, clientMerged.templating?.twig?.alterFile),
+        ...merged.templating?.twig,
+        alterFile: resolveOptionalFile(repoRoot, merged.templating?.twig?.alterFile),
       },
     },
     server: {
-      ...clientMerged.server,
-      port: normalizePort(clientMerged.server?.port),
+      ...merged.server,
+      port: normalizePort(merged.server?.port),
     },
     css: {
-      ...clientMerged.css,
-      entryFile: resolveOptionalFile(repoRoot, clientMerged.css?.entryFile),
-      outputFile: normalizeOutputFile(clientMerged.css?.outputFile, 'app.css'),
+      ...merged.css,
+      entryFile: resolveOptionalFile(repoRoot, merged.css?.entryFile),
+      outputFile: normalizeOutputFile(merged.css?.outputFile, 'app.css'),
       baseFiles: cssBaseFiles,
       loadPaths: cssLoadPaths,
     },
     js: {
-      ...clientMerged.js,
+      ...merged.js,
       compiler: jsCompiler,
-      bundle: clientMerged.js?.bundle !== false,
-      entryFile: resolveOptionalFile(repoRoot, clientMerged.js?.entryFile),
-      outputFile: normalizeOutputFile(clientMerged.js?.outputFile, 'app.js'),
+      bundle: merged.js?.bundle !== false,
+      entryFile: resolveOptionalFile(repoRoot, merged.js?.entryFile),
+      outputFile: normalizeOutputFile(merged.js?.outputFile, 'app.js'),
       target: jsTargets,
       baseFiles: jsBaseFiles,
     },
     output: {
-      ...clientMerged.output,
-      componentsDir: normalizeOutputFile(clientMerged.output?.componentsDir, 'components'),
-      treeFile: normalizeOutputFile(clientMerged.output?.treeFile, 'tree.json'),
-      manifestFile: normalizeOutputFile(clientMerged.output?.manifestFile, 'components.json'),
-      indexFile: normalizeOutputFile(clientMerged.output?.indexFile, 'index.html'),
+      ...merged.output,
+      componentsDir: normalizeOutputFile(merged.output?.componentsDir, 'components'),
+      treeFile: normalizeOutputFile(merged.output?.treeFile, 'tree.json'),
+      manifestFile: normalizeOutputFile(merged.output?.manifestFile, 'components.json'),
+      indexFile: normalizeOutputFile(merged.output?.indexFile, 'index.html'),
     },
     plugins: resolvedPlugins,
     _meta: {
       titleWithVersion:
         typeof pkg.version === 'string' && pkg.version
-          ? `${clientMerged.title} v${pkg.version}`
-          : clientMerged.title,
+          ? `${merged.title} v${pkg.version}`
+          : merged.title,
       cssBaseFilesRelative: cssBaseFiles.map((filePath) =>
         toPosix(path.relative(repoRoot, filePath)),
       ),
