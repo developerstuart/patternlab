@@ -4,6 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPatternlabConfig } from "./lib/config.mjs";
 import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
+import { createHookRunner, loadPlugins } from "./lib/plugins.mjs";
+import { readJsonSafe, readTextSafe, writeFileSafe } from "./lib/core/fs.mjs";
+import {
+  normalizeCardDisplay as normalizeCardDisplayMeta,
+  readFolderMeta as readFolderMetaShared,
+  readMeta as readMetaShared,
+  toLabel as toLabelShared,
+} from "./lib/core/meta.mjs";
 import { pathToFileURL } from "url";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
@@ -11,18 +19,7 @@ import { pathToFileURL } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const srcRoot = path.join(repoRoot, "src");
-const componentsRoot = path.join(srcRoot, "components");
-const assetsRoot = path.join(srcRoot, "assets");
-const distRoot = path.join(repoRoot, "dist");
 const phpRenderer = path.join(repoRoot, "php", "render.php");
-const templatesRoot = path.join(repoRoot, "scripts", "templates");
-const patternlabConfig = loadPatternlabConfig(repoRoot);
-const cssOutputFile = patternlabConfig.css.outputFile;
-const jsOutputFile = patternlabConfig.js.outputFile;
-for (const warning of patternlabConfig._meta?.configWarnings ?? []) {
-  console.warn(`[patternlab.config] ${warning}`);
-}
 
 const argv = process.argv.slice(2);
 const getArgValue = (name) => {
@@ -30,10 +27,33 @@ const getArgValue = (name) => {
   if (i < 0) return null;
   return argv[i + 1] ?? null;
 };
+const clientProfile = getArgValue("--client");
+const patternlabConfig = loadPatternlabConfig(repoRoot, {
+  client: clientProfile,
+});
+const srcRoot = patternlabConfig.paths.srcRoot;
+const componentsRoot = patternlabConfig.paths.componentsRoot;
+const assetsRoot = patternlabConfig.paths.assetsRoot;
+const distRoot = patternlabConfig.paths.distRoot;
+const templatesRoot = patternlabConfig.paths.templatesRoot;
+const cssOutputFile = patternlabConfig.css.outputFile;
+const jsOutputFile = patternlabConfig.js.outputFile;
+const componentsOutputDir = patternlabConfig.output.componentsDir;
+const treeOutputFile = patternlabConfig.output.treeFile;
+const manifestOutputFile = patternlabConfig.output.manifestFile;
+const indexOutputFile = patternlabConfig.output.indexFile;
+for (const warning of patternlabConfig._meta?.configWarnings ?? []) {
+  console.warn(`[patternlab.config] ${warning}`);
+}
+const plugins = await loadPlugins(repoRoot, patternlabConfig.plugins);
+const hooks = createHookRunner(plugins);
 const buildMode = getArgValue("--mode") ?? "full"; // full | styles | component
 const changedSource = getArgValue("--source");
 const requestedConcurrency = Number(
-  getArgValue("--concurrency") ?? process.env.PL_RENDER_CONCURRENCY ?? 4,
+  getArgValue("--concurrency") ??
+    process.env.PL_RENDER_CONCURRENCY ??
+    patternlabConfig.build?.renderConcurrency ??
+    4,
 );
 const renderConcurrency =
   Number.isFinite(requestedConcurrency) && requestedConcurrency > 0
@@ -42,14 +62,9 @@ const renderConcurrency =
 
 // ─── Supported template engines ───────────────────────────────────────────────
 
-const TEMPLATE_EXTS = new Map([
-  [".twig", "twig"],
-  [".mustache", "mustache"],
-  [".njk", "nunjucks"],
-  [".liquid", "liquid"],
-  [".hbs", "handlebars"],
-  [".html", "html"],
-]);
+const TEMPLATE_EXTS = new Map(
+  Object.entries(patternlabConfig.templating?.engines ?? {}),
+);
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
@@ -57,10 +72,7 @@ const toPosix = (v) => v.split(path.sep).join("/");
 const toPublicAssetPath = (value) =>
   `/${toPosix(String(value).replace(/^\/+/, ""))}`;
 
-const writeFile = (filePath, content) => {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, content, "utf8");
-};
+const writeFile = writeFileSafe;
 
 const getMtimeMs = (filePath) => {
   if (!filePath || !fs.existsSync(filePath)) return 0;
@@ -82,68 +94,11 @@ const copyDir = (src, dest) => {
   }
 };
 
-// Minimal YAML frontmatter parser (key: value pairs only)
-const parseFrontmatter = (raw) => {
-  const m = raw.match(
-    /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?([\s\S]*)$/,
-  );
-  if (!m) return { meta: {}, body: raw };
-  const meta = {};
-  for (const line of m[1].split("\n")) {
-    const colon = line.indexOf(":");
-    if (colon < 0) continue;
-    const key = line.slice(0, colon).trim();
-    let val = line.slice(colon + 1).trim();
-    if (val === "true") val = true;
-    else if (val === "false") val = false;
-    else if (val !== "" && !Number.isNaN(Number(val))) val = Number(val);
-    if (key) meta[key] = val;
-  }
-  return { meta, body: m[2] };
-};
-
-const readMeta = (filePath) => {
-  if (!fs.existsSync(filePath)) return {};
-  return parseFrontmatter(fs.readFileSync(filePath, "utf8")).meta;
-};
-
-const readFolderMeta = (dirPath) => {
-  const canonical = path.join(dirPath, "_meta.md");
-  if (fs.existsSync(canonical)) return readMeta(canonical);
-
-  const folderNamed = path.join(dirPath, `_${path.basename(dirPath)}.md`);
-  if (fs.existsSync(folderNamed)) return readMeta(folderNamed);
-
-  const fallback = fs
-    .readdirSync(dirPath, { withFileTypes: true })
-    .filter(
-      (entry) =>
-        entry.isFile() &&
-        entry.name.startsWith("_") &&
-        entry.name.endsWith(".md"),
-    )
-    .sort((a, b) => a.name.localeCompare(b.name))[0];
-
-  if (!fallback) return {};
-  return readMeta(path.join(dirPath, fallback.name));
-};
-
-const readJson = (filePath) => {
-  if (!fs.existsSync(filePath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return null;
-  }
-};
-
-const readText = (filePath) => {
-  if (!fs.existsSync(filePath)) return "";
-  return fs.readFileSync(filePath, "utf8");
-};
-
-const toLabel = (stem) =>
-  stem.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const readMeta = readMetaShared;
+const readFolderMeta = readFolderMetaShared;
+const readJson = readJsonSafe;
+const readText = readTextSafe;
+const toLabel = toLabelShared;
 const escHtml = (value) =>
   String(value)
     .replace(/&/g, "&amp;")
@@ -193,6 +148,9 @@ const renderTemplate = async (templatePath, engine, context) => {
       "--context",
       tmpCtx,
     ];
+    if (patternlabConfig.templating?.twig?.alterFile) {
+      args.push("--alter-twig", patternlabConfig.templating.twig.alterFile);
+    }
     try {
       return await execFileUtf8("php", args);
     } catch (err) {
@@ -288,11 +246,7 @@ window.addEventListener('message', function(e) {
  *   - children: sub-folder nodes + component nodes
  *   - _scss / _js: style and script files to bundle
  */
-const normalizeCardDisplay = (value) => {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().toLowerCase();
-  return normalized === "normal" || normalized === "full" ? normalized : null;
-};
+const normalizeCardDisplay = normalizeCardDisplayMeta;
 
 const discoverDir = (
   dir,
@@ -402,7 +356,7 @@ const discoverDir = (
   for (const [stem, base] of bases) {
     if (base.meta.hidden) continue;
     const compId = relPath ? `${relPath}/${stem}` : stem;
-    const outBase = toPosix(path.join("components", relPath || "", stem));
+    const outBase = toPosix(path.join(componentsOutputDir, relPath || "", stem));
     const componentCardDisplay =
       normalizeCardDisplay(
         base.meta.card_display ??
@@ -820,13 +774,24 @@ const stripPrivate = (node) => {
 // ─── Render a single component or variation ────────────────────────────────────
 
 const renderItem = async (item, componentHeadExtra) => {
+  const renderPayload = await hooks.run("beforeRenderItem", {
+    item,
+    componentHeadExtra,
+  });
+  const renderItemInput = renderPayload?.item ?? item;
+  const headInput = renderPayload?.componentHeadExtra ?? componentHeadExtra;
   const { templatePath, engine, baseJsonPath, varJsonPath, globalData } =
-    item._render;
+    renderItemInput._render;
   const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
   const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
   const context = mergeDeep(globalData, baseData, varData);
   const body = await renderTemplate(templatePath, engine, context);
-  return wrapComponent(body, componentHeadExtra);
+  const wrapped = wrapComponent(body, headInput);
+  const afterPayload = await hooks.run("afterRenderItem", {
+    item: renderItemInput,
+    html: wrapped,
+  });
+  return afterPayload?.html ?? wrapped;
 };
 
 // ─── UI HTML ─────────────────────────────────────────────────────────────────
@@ -863,14 +828,21 @@ const buildIndexHtml = (publicTree, totalCount) => {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-const discover = () => {
-  const globalData = loadRootGlobalData(srcRoot);
+const discover = async () => {
+  await hooks.run("beforeDiscover", { componentsRoot, patternlabConfig });
+  const globalData = loadRootGlobalData({
+    srcRoot,
+    dataRoot: patternlabConfig.paths.dataRoot,
+  });
   const tree = discoverDir(componentsRoot, "", globalData, "normal");
   if (!tree) {
-    console.error("No components found under src/components/");
+    console.error(
+      `No components found under ${toPosix(path.relative(repoRoot, componentsRoot))}/`,
+    );
     process.exit(1);
   }
-  return tree;
+  const payload = await hooks.run("afterDiscover", { tree, patternlabConfig });
+  return payload?.tree ?? tree;
 };
 
 const writeCssJs = async (tree) => {
@@ -921,9 +893,7 @@ const writeCssJs = async (tree) => {
 
 const renderAll = async (tree) => {
   const renderables = flattenRenderables(tree);
-  const componentHeadExtra = readText(
-    path.join(srcRoot, "_component-head.html"),
-  );
+  const componentHeadExtra = readText(patternlabConfig.paths.componentHeadPath);
   const total = renderables.length;
   const workerCount = Math.max(1, Math.min(renderConcurrency, total));
   let nextIndex = 0;
@@ -951,12 +921,13 @@ const renderAll = async (tree) => {
 };
 
 const writeSharedArtifacts = async (tree, renderables) => {
+  await hooks.run("beforeWriteArtifacts", { tree, renderables });
   await writeCssJs(tree);
   copyDir(assetsRoot, path.join(distRoot, "assets"));
 
   const publicTree = stripPrivate(tree);
   writeFile(
-    path.join(distRoot, "tree.json"),
+    path.join(distRoot, ...treeOutputFile.split("/")),
     JSON.stringify(publicTree, null, 2) + "\n",
   );
 
@@ -967,46 +938,67 @@ const writeSharedArtifacts = async (tree, renderables) => {
     outputPath,
   }));
   writeFile(
-    path.join(distRoot, "components.json"),
+    path.join(distRoot, ...manifestOutputFile.split("/")),
     JSON.stringify(manifest, null, 2) + "\n",
   );
 
   writeFile(
-    path.join(distRoot, "index.html"),
+    path.join(distRoot, ...indexOutputFile.split("/")),
     buildIndexHtml(publicTree, renderables.length),
   );
+  await hooks.run("afterWriteArtifacts", { tree, renderables });
 };
 
 const main = async () => {
+  await hooks.run("beforeBuild", {
+    buildMode,
+    changedSource,
+    client: clientProfile,
+    patternlabConfig,
+  });
   console.log(
-    `Building pattern library (mode: ${buildMode}, render concurrency: ${renderConcurrency})...`,
+    `Building pattern library (mode: ${buildMode}, render concurrency: ${renderConcurrency}${clientProfile ? `, client: ${clientProfile}` : ""})...`,
   );
   if (buildMode === "full") {
     fs.rmSync(distRoot, { recursive: true, force: true });
     fs.mkdirSync(distRoot, { recursive: true });
     console.log("Discovering components...");
-    const tree = discover();
+    const tree = await discover();
     console.log("Rendering components...");
     const renderables = await renderAll(tree);
     console.log("Building shared assets and index...");
     await writeSharedArtifacts(tree, renderables);
     console.log(`Rendered ${renderables.length} component(s) into ${distRoot}`);
+    await hooks.run("afterBuild", {
+      buildMode,
+      changedSource,
+      client: clientProfile,
+      patternlabConfig,
+      result: { renderablesCount: renderables.length },
+    });
     return;
   }
 
   if (buildMode === "styles") {
     fs.mkdirSync(distRoot, { recursive: true });
-    const tree = discover();
+    const tree = await discover();
     await writeCssJs(tree);
     console.log(`Rebuilt ${cssOutputFile} and ${jsOutputFile} in ${distRoot}`);
+    await hooks.run("afterBuild", {
+      buildMode,
+      changedSource,
+      client: clientProfile,
+      patternlabConfig,
+      result: {},
+    });
     return;
   }
 
   if (buildMode === "modified-components") {
     fs.mkdirSync(distRoot, { recursive: true });
-    const tree = discover();
+    const tree = await discover();
     const renderables = flattenRenderables(tree);
-    const componentHeadPath = path.join(srcRoot, "_component-head.html");
+    const componentHeadPath = patternlabConfig.paths.componentHeadPath;
     const componentHeadExtra = readText(componentHeadPath);
     const rootGlobalDependencyFiles = collectRootGlobalDependencyFiles();
     let renderedCount = 0;
@@ -1047,12 +1039,19 @@ const main = async () => {
 
     console.log("Building shared assets and index...");
     await writeSharedArtifacts(tree, renderables);
+    await hooks.run("afterBuild", {
+      buildMode,
+      changedSource,
+      client: clientProfile,
+      patternlabConfig,
+      result: { renderablesCount: renderables.length },
+    });
     return;
   }
 
   if (buildMode === "component") {
     fs.mkdirSync(distRoot, { recursive: true });
-    const tree = discover();
+    const tree = await discover();
     const renderables = flattenRenderables(tree);
     const ids = resolveAffectedComponentIds(changedSource, renderables);
     if (ids.length === 0) {
@@ -1060,9 +1059,7 @@ const main = async () => {
       return;
     }
     const idSet = new Set(ids);
-    const componentHeadExtra = readText(
-      path.join(srcRoot, "_component-head.html"),
-    );
+    const componentHeadExtra = readText(patternlabConfig.paths.componentHeadPath);
     for (const item of renderables) {
       if (!idSet.has(item.id)) continue;
       const html = await renderItem(item, componentHeadExtra);
@@ -1070,6 +1067,13 @@ const main = async () => {
       writeFile(outPath, html);
     }
     console.log(`Re-rendered ${ids.length} component page(s)`);
+    await hooks.run("afterBuild", {
+      buildMode,
+      changedSource,
+      client: clientProfile,
+      patternlabConfig,
+      result: { renderablesCount: ids.length },
+    });
     return;
   }
 

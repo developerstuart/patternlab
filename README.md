@@ -58,20 +58,21 @@ src/
 npm run build     # Build dist/
 npm run serve     # Serve dist/ at http://localhost:3000
 npm run dev       # Serve with watch + live reload
-npm run dev:changed # Watch mode; only rerender components modified since last build
+npm run dev:full  # Watch mode with full rebuild startup
 ```
 
 Open `http://localhost:3000` to browse and preview components.
 
 ## Scripts
 
-| Command               | Description                                                              |
-| --------------------- | ------------------------------------------------------------------------ |
-| `npm run build`       | Walk `src/components/`, render templates, compile SCSS, copy assets      |
-| `npm run serve`       | Serve `dist/` on port 3000 (env `PORT` overrides)                        |
-| `npm run dev`         | Run dev server with src watcher, incremental rebuilds, and live reload   |
-| `npm run dev:changed` | Start dev mode and only rerender components changed since the last build |
-| `npm test`            | Run integration tests                                                    |
+| Command          | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `npm run build`  | Walk components, render templates, compile SCSS/JS, copy assets      |
+| `npm run serve`  | Serve configured dist output on port 3000 (env `PORT` overrides)     |
+| `npm run dev`    | Run dev server with src watcher, incremental rebuilds, and live reload |
+| `npm run dev:full` | Run dev server in watch mode with full initial rebuild               |
+| `npm run dev:styles` | Run dev server in watch mode focused on style/script iteration      |
+| `npm test`       | Run integration tests                                                 |
 
 ## `patternlab.config.json`
 
@@ -81,6 +82,12 @@ Use `patternlab.config.json` in the repository root to control:
 - `ui.showThemeToggle`, `ui.showViewportControls`, `ui.enableResizeHandles`
 - `css.enabled`, `css.includeComponentFiles`, `css.entryFile`, `css.outputFile`, `css.baseFiles`, `css.loadPaths`
 - `js.compiler`, `js.enabled`, `js.bundle`, `js.includeComponentFiles`, `js.entryFile`, `js.outputFile`, `js.targetQuery`, `js.target`, `js.baseFiles`
+- `paths.srcRoot`, `paths.componentsRoot`, `paths.dataRoot`, `paths.assetsRoot`, `paths.distRoot`, `paths.componentHeadFile`
+- `templating.engines` and `templating.twig.alterFile`
+- `output.componentsDir`, `output.treeFile`, `output.manifestFile`, `output.indexFile`
+- `ui.preview.viewportPresets`, `ui.preview.normalHeight`, `ui.preview.fullWidth`, `ui.preview.fullHeight`, `ui.preview.fullMinHeight`, `ui.preview.fullMaxHeight`
+- `plugins` lifecycle extensions
+- `clients` client-specific config overrides used with `--client <name>`
 
 The package version from `package.json` is appended automatically in the header.
 
@@ -116,6 +123,65 @@ Example:
 - Use `css.outputFile` / `js.outputFile` to change emitted asset names and paths under `dist/`.
 - Use `css.entryFile` / `js.entryFile` to configure custom primary entry files.
 - Invalid `js.targetQuery` values print a warning and fall back to `es2020`.
+
+## Skeleton contract
+
+This project is intended to stay a reusable core skeleton:
+
+1. **Core responsibilities**
+   - Discover and render component templates.
+   - Merge global + component + variation data.
+   - Build aggregated CSS/JS outputs.
+   - Generate preview UI and navigation artifacts.
+   - Serve + live-reload with incremental rebuild support.
+2. **Stable public surface**
+   - `patternlab.config.json` keys documented in this README.
+   - CLI contract: `build`, `serve`, `dev` scripts and optional `--client`.
+   - Plugin hook names in `scripts/lib/plugins.mjs`.
+3. **Backward compatibility**
+   - Existing default folder layout continues to work (`src/components`, `src/data`, `src/assets`, `dist`).
+   - Legacy `src/_global.json` is still merged before `src/data/**/*.json`.
+   - Existing component filename conventions and variation behavior are preserved.
+
+## Config matrix (what to configure)
+
+- **Required defaults (core):**
+  - `title`, `paths.*`, `css.enabled`, `js.enabled`, `output.*`
+- **Optional toggles (common):**
+  - `ui.showModeToggle`, `ui.showThemeToggle`, `ui.showViewportControls`, `ui.enableResizeHandles`, `js.bundle`
+- **Advanced overrides (power users):**
+  - `templating.engines`, `templating.twig.alterFile`, `css/base/js entry + base files`, `ui.preview.*`, target browsers
+- **Extension hooks:**
+  - `plugins: ["relative/path/to/plugin.mjs"]`
+  - Hooks: `beforeBuild`, `afterBuild`, `beforeDiscover`, `afterDiscover`, `beforeRenderItem`, `afterRenderItem`, `beforeWriteArtifacts`, `afterWriteArtifacts`, `beforeClassifyChange`, `afterClassifyChange`
+
+## Client builds while keeping core updatable
+
+Use `clients` in `patternlab.config.json` to keep client code in-repo while preserving a shared core:
+
+- Keep shared defaults at root config.
+- Add client-specific overrides under `clients.<name>`.
+- Build or serve a client profile with:
+  - `node scripts/build.mjs --client acme`
+  - `node scripts/serve.mjs --watch --client acme`
+
+Recommended structure:
+
+```text
+clients/
+  acme/
+    src/...
+  beta/
+    src/...
+```
+
+Each client can override paths, assets, plugins, preview behavior, template engines, and output layout without forking core scripts.
+
+## Migration notes
+
+- `dev:changed` was removed; use `npm run dev` (incremental) or `npm run dev:full`.
+- Config now supports path/output/templating/plugin/client groups. Existing configs remain valid with defaults.
+- Twig alteration remains optional; configure custom file via `templating.twig.alterFile`.
 
 ## Adding a new section
 
