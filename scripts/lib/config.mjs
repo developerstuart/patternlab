@@ -1,34 +1,34 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import browserslist from 'browserslist';
-import browserslistToEsbuild from 'browserslist-to-esbuild';
-import { collectFilesByExtension, readJsonSafe } from './core/fs.mjs';
-import { mergeDeep } from './core/object.mjs';
+import fs from "node:fs";
+import path from "node:path";
+import browserslist from "browserslist";
+import browserslistToEsbuild from "browserslist-to-esbuild";
+import { collectFilesByExtension, readJsonSafe } from "./core/fs.mjs";
+import { mergeDeep } from "./core/object.mjs";
 import {
   normalizeOutputFile,
   normalizePathList,
   resolveOptionalFile,
   toPosix,
-} from './core/path.mjs';
+} from "./core/path.mjs";
 
 const DEFAULT_CONFIG = {
-  title: 'Pattern Lab',
+  title: "Pattern Lab",
   compatibility: {
-    mode: 'v1',
+    mode: "v1",
     preserveLegacyPaths: true,
   },
   paths: {
-    srcRoot: 'src',
-    componentsRoot: 'components',
-    dataRoot: 'data',
-    assetsRoot: 'assets',
-    distRoot: 'dist',
-    componentHeadFile: '_component-head.html',
+    srcRoot: "src",
+    componentsRoot: "components",
+    dataRoot: "data",
+    assetsRoot: "assets",
+    distRoot: "dist",
+    componentHeadFile: "_component-head.html",
   },
   ui: {
     showModeToggle: true,
     showThemeToggle: true,
-    themes: ['default', 'alternative', 'grey'],
+    themes: ["default", "alternative", "grey"],
     showViewportControls: true,
     enableResizeHandles: true,
     preview: {
@@ -47,41 +47,41 @@ const DEFAULT_CONFIG = {
   },
   templating: {
     engines: {
-      '.twig': 'twig',
-      '.mustache': 'mustache',
-      '.njk': 'nunjucks',
-      '.liquid': 'liquid',
-      '.hbs': 'handlebars',
-      '.html': 'html',
+      ".twig": "twig",
+      ".mustache": "mustache",
+      ".njk": "nunjucks",
+      ".liquid": "liquid",
+      ".hbs": "handlebars",
+      ".html": "html",
     },
     twig: {
-      alterFile: 'php/alter-twig.php',
+      alterFile: null,
     },
   },
   css: {
     enabled: true,
     includeComponentFiles: true,
-    entryFile: 'src/scss/style.scss',
-    outputFile: 'app.css',
+    entryFile: "src/scss/style.scss",
+    outputFile: "app.css",
     baseFiles: [],
     loadPaths: [],
   },
   js: {
-    compiler: 'esbuild',
+    compiler: "esbuild",
     enabled: true,
     bundle: true,
     includeComponentFiles: true,
     entryFile: null,
-    outputFile: 'app.js',
-    target: ['es2020'],
+    outputFile: "app.js",
+    target: ["es2020"],
     targetQuery: null,
     baseFiles: [],
   },
   output: {
-    componentsDir: 'components',
-    treeFile: 'tree.json',
-    manifestFile: 'components.json',
-    indexFile: 'index.html',
+    componentsDir: "components",
+    treeFile: "tree.json",
+    manifestFile: "components.json",
+    indexFile: "index.html",
   },
   server: {
     port: 3000,
@@ -95,22 +95,22 @@ const DEFAULT_CONFIG = {
 const normalizeTargetArray = (targets) => {
   if (!Array.isArray(targets)) return [];
   return targets
-    .filter((target) => typeof target === 'string' && target.trim() !== '')
+    .filter((target) => typeof target === "string" && target.trim() !== "")
     .map((target) => target.trim());
 };
 
 const normalizeJsCompiler = (value) => {
-  if (typeof value !== 'string' || value.trim() === '') {
-    return { compiler: 'esbuild', warning: null };
+  if (typeof value !== "string" || value.trim() === "") {
+    return { compiler: "esbuild", warning: null };
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized === 'esbuild') {
-    return { compiler: 'esbuild', warning: null };
+  if (normalized === "esbuild") {
+    return { compiler: "esbuild", warning: null };
   }
 
   return {
-    compiler: 'esbuild',
+    compiler: "esbuild",
     warning: `Unsupported js.compiler "${value}". Falling back to "esbuild".`,
   };
 };
@@ -123,11 +123,14 @@ const resolveJsTargets = (jsConfig) => {
   }
 
   const queryCandidates = [];
-  if (typeof jsConfig?.targetQuery === 'string' && jsConfig.targetQuery.trim()) {
-    queryCandidates.push({ value: jsConfig.targetQuery, field: 'targetQuery' });
+  if (
+    typeof jsConfig?.targetQuery === "string" &&
+    jsConfig.targetQuery.trim()
+  ) {
+    queryCandidates.push({ value: jsConfig.targetQuery, field: "targetQuery" });
   }
-  if (typeof jsConfig?.target === 'string' && jsConfig.target.trim()) {
-    queryCandidates.push({ value: jsConfig.target, field: 'target' });
+  if (typeof jsConfig?.target === "string" && jsConfig.target.trim()) {
+    queryCandidates.push({ value: jsConfig.target, field: "target" });
   }
 
   for (const queryCandidate of queryCandidates) {
@@ -146,7 +149,7 @@ const resolveJsTargets = (jsConfig) => {
     }
   }
 
-  return { target: ['es2020'], warnings };
+  return { target: ["es2020"], warnings };
 };
 
 const normalizePort = (value) => {
@@ -158,18 +161,24 @@ const normalizePort = (value) => {
 const sanitizeTemplateEngines = (enginesConfig, configWarnings) => {
   const engines = {};
   for (const [ext, engine] of Object.entries(enginesConfig ?? {})) {
-    if (typeof ext !== 'string' || !ext.startsWith('.')) {
-      configWarnings.push(`Invalid templating engine extension key "${ext}" ignored.`);
+    if (typeof ext !== "string" || !ext.startsWith(".")) {
+      configWarnings.push(
+        `Invalid templating engine extension key "${ext}" ignored.`,
+      );
       continue;
     }
-    if (typeof engine !== 'string' || !engine.trim()) {
-      configWarnings.push(`Invalid templating engine value for "${ext}" ignored.`);
+    if (typeof engine !== "string" || !engine.trim()) {
+      configWarnings.push(
+        `Invalid templating engine value for "${ext}" ignored.`,
+      );
       continue;
     }
     engines[ext] = engine.trim().toLowerCase();
   }
   if (Object.keys(engines).length === 0) {
-    configWarnings.push('No valid templating.engines configured. Restoring defaults.');
+    configWarnings.push(
+      "No valid templating.engines configured. Restoring defaults.",
+    );
     return { ...DEFAULT_CONFIG.templating.engines };
   }
   return engines;
@@ -178,29 +187,42 @@ const sanitizeTemplateEngines = (enginesConfig, configWarnings) => {
 const normalizePlugins = (plugins, configWarnings) => {
   if (!Array.isArray(plugins)) return [];
   return plugins.filter((pluginPath) => {
-    const valid = typeof pluginPath === 'string' && pluginPath.trim() !== '';
-    if (!valid) configWarnings.push('Ignored invalid plugin path entry.');
+    const valid = typeof pluginPath === "string" && pluginPath.trim() !== "";
+    if (!valid) configWarnings.push("Ignored invalid plugin path entry.");
     return valid;
   });
 };
 
-const resolvePathStructure = (repoRoot, coreRoot, pathsConfig, configWarnings) => {
-  const srcRoot = path.resolve(repoRoot, pathsConfig.srcRoot || 'src');
-  const componentsRoot = path.resolve(srcRoot, pathsConfig.componentsRoot || 'components');
-  const dataRoot = path.resolve(srcRoot, pathsConfig.dataRoot || 'data');
-  const assetsRoot = path.resolve(srcRoot, pathsConfig.assetsRoot || 'assets');
-  const distRoot = path.resolve(repoRoot, pathsConfig.distRoot || 'dist');
-  const templatesRoot = path.resolve(coreRoot, 'scripts/templates');
-  const componentHeadPath = path.resolve(srcRoot, pathsConfig.componentHeadFile || '_component-head.html');
+const resolvePathStructure = (
+  repoRoot,
+  coreRoot,
+  pathsConfig,
+  configWarnings,
+) => {
+  const srcRoot = path.resolve(repoRoot, pathsConfig.srcRoot || "src");
+  const componentsRoot = path.resolve(
+    srcRoot,
+    pathsConfig.componentsRoot || "components",
+  );
+  const dataRoot = path.resolve(srcRoot, pathsConfig.dataRoot || "data");
+  const assetsRoot = path.resolve(srcRoot, pathsConfig.assetsRoot || "assets");
+  const distRoot = path.resolve(repoRoot, pathsConfig.distRoot || "dist");
+  const templatesRoot = path.resolve(coreRoot, "scripts/templates");
+  const componentHeadPath = path.resolve(
+    srcRoot,
+    pathsConfig.componentHeadFile || "_component-head.html",
+  );
 
   if (!fs.existsSync(componentsRoot)) {
     configWarnings.push(
       `No components directory found at ${toPosix(path.relative(repoRoot, componentsRoot))}. ` +
-        'Builds will be empty until component files are added.',
+        "Builds will be empty until component files are added.",
     );
   }
   if (!fs.existsSync(templatesRoot)) {
-    configWarnings.push('Core UI templates directory was not found in the installed package.');
+    configWarnings.push(
+      "Core UI templates directory was not found in the installed package.",
+    );
   }
 
   return {
@@ -216,16 +238,16 @@ const resolvePathStructure = (repoRoot, coreRoot, pathsConfig, configWarnings) =
 
 export const loadPatternlabConfig = (input) => {
   const options =
-    typeof input === 'string'
+    typeof input === "string"
       ? { repoRoot: input, coreRoot: input }
       : (input ?? {});
   const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
   const coreRoot = path.resolve(options.coreRoot ?? repoRoot);
   const configPath = path.resolve(
-    options.configPath ?? path.join(repoRoot, 'patternlab.config.json'),
+    options.configPath ?? path.join(repoRoot, "patternlab.config.json"),
   );
   const loaded = readJsonSafe(configPath) ?? {};
-  const pkg = readJsonSafe(path.join(coreRoot, 'package.json')) ?? {};
+  const pkg = readJsonSafe(path.join(coreRoot, "package.json")) ?? {};
   const merged = mergeDeep(DEFAULT_CONFIG, loaded);
   const configWarnings = [];
 
@@ -240,21 +262,27 @@ export const loadPatternlabConfig = (input) => {
   const jsBaseCandidates = normalizePathList(repoRoot, merged.js?.baseFiles);
 
   const cssBaseFiles = cssBaseCandidates.flatMap((candidate) =>
-    collectFilesByExtension(candidate, new Set(['.scss', '.css'])),
+    collectFilesByExtension(candidate, new Set([".scss", ".css"])),
   );
   const jsBaseFiles = jsBaseCandidates.flatMap((candidate) =>
-    collectFilesByExtension(candidate, new Set(['.js', '.mjs', '.cjs'])),
+    collectFilesByExtension(candidate, new Set([".js", ".mjs", ".cjs"])),
   );
 
-  const cssLoadPaths = normalizePathList(repoRoot, merged.css?.loadPaths).filter(
-    (candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isDirectory(),
+  const cssLoadPaths = normalizePathList(
+    repoRoot,
+    merged.css?.loadPaths,
+  ).filter(
+    (candidate) =>
+      fs.existsSync(candidate) && fs.statSync(candidate).isDirectory(),
   );
 
   const { compiler: jsCompiler, warning: jsCompilerWarning } =
     normalizeJsCompiler(merged.js?.compiler);
   if (jsCompilerWarning) configWarnings.push(jsCompilerWarning);
 
-  const { target: jsTargets, warnings: jsTargetWarnings } = resolveJsTargets(merged.js);
+  const { target: jsTargets, warnings: jsTargetWarnings } = resolveJsTargets(
+    merged.js,
+  );
   configWarnings.push(...jsTargetWarnings);
 
   const templateEngines = sanitizeTemplateEngines(
@@ -262,11 +290,23 @@ export const loadPatternlabConfig = (input) => {
     configWarnings,
   );
 
+  const configuredAlterFile = merged.templating?.twig?.alterFile;
+  const resolvedAlterFile = resolveOptionalFile(repoRoot, configuredAlterFile);
+  if (
+    typeof configuredAlterFile === "string" &&
+    configuredAlterFile.trim() !== "" &&
+    !resolvedAlterFile
+  ) {
+    configWarnings.push(
+      `templating.twig.alterFile was configured but not found: ${configuredAlterFile}`,
+    );
+  }
+
   const resolvedPlugins = normalizePlugins(merged.plugins, configWarnings);
 
   return {
     ...merged,
-    packageVersion: typeof pkg.version === 'string' ? pkg.version : '',
+    packageVersion: typeof pkg.version === "string" ? pkg.version : "",
     paths: {
       ...merged.paths,
       ...pathConfig,
@@ -276,7 +316,7 @@ export const loadPatternlabConfig = (input) => {
       engines: templateEngines,
       twig: {
         ...merged.templating?.twig,
-        alterFile: resolveOptionalFile(coreRoot, merged.templating?.twig?.alterFile),
+        alterFile: resolvedAlterFile,
       },
     },
     server: {
@@ -286,7 +326,7 @@ export const loadPatternlabConfig = (input) => {
     css: {
       ...merged.css,
       entryFile: resolveOptionalFile(repoRoot, merged.css?.entryFile),
-      outputFile: normalizeOutputFile(merged.css?.outputFile, 'app.css'),
+      outputFile: normalizeOutputFile(merged.css?.outputFile, "app.css"),
       baseFiles: cssBaseFiles,
       loadPaths: cssLoadPaths,
     },
@@ -295,21 +335,27 @@ export const loadPatternlabConfig = (input) => {
       compiler: jsCompiler,
       bundle: merged.js?.bundle !== false,
       entryFile: resolveOptionalFile(repoRoot, merged.js?.entryFile),
-      outputFile: normalizeOutputFile(merged.js?.outputFile, 'app.js'),
+      outputFile: normalizeOutputFile(merged.js?.outputFile, "app.js"),
       target: jsTargets,
       baseFiles: jsBaseFiles,
     },
     output: {
       ...merged.output,
-      componentsDir: normalizeOutputFile(merged.output?.componentsDir, 'components'),
-      treeFile: normalizeOutputFile(merged.output?.treeFile, 'tree.json'),
-      manifestFile: normalizeOutputFile(merged.output?.manifestFile, 'components.json'),
-      indexFile: normalizeOutputFile(merged.output?.indexFile, 'index.html'),
+      componentsDir: normalizeOutputFile(
+        merged.output?.componentsDir,
+        "components",
+      ),
+      treeFile: normalizeOutputFile(merged.output?.treeFile, "tree.json"),
+      manifestFile: normalizeOutputFile(
+        merged.output?.manifestFile,
+        "components.json",
+      ),
+      indexFile: normalizeOutputFile(merged.output?.indexFile, "index.html"),
     },
     plugins: resolvedPlugins,
     _meta: {
       titleWithVersion:
-        typeof pkg.version === 'string' && pkg.version
+        typeof pkg.version === "string" && pkg.version
           ? `${merged.title} v${pkg.version}`
           : merged.title,
       cssBaseFilesRelative: cssBaseFiles.map((filePath) =>

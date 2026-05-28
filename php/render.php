@@ -101,11 +101,11 @@ function fallbackRender(string $templatePath, array $context, string $components
 function applyAlterTwig(Environment $twig, array $config, string $alterTwigPath = ''): void
 {
     if ($alterTwigPath === '') {
-        $alterTwigPath = __DIR__ . DIRECTORY_SEPARATOR . 'alter-twig.php';
+        return;
     }
 
     if (!is_file($alterTwigPath)) {
-        return;
+        throw new RuntimeException(sprintf('Configured Twig alter file was not found: %s', $alterTwigPath));
     }
 
     require_once $alterTwigPath;
@@ -115,7 +115,7 @@ function applyAlterTwig(Environment $twig, array $config, string $alterTwigPath 
         return;
     }
 
-    throw new RuntimeException('Found php/alter-twig.php but no addCustomExtension(Environment &$env, $config) function was defined.');
+    throw new RuntimeException(sprintf('Configured alter file did not define addCustomExtension(Environment &$env, $config): %s', $alterTwigPath));
 }
 
 function formatThrowable(Throwable $e): string
@@ -145,11 +145,73 @@ function formatThrowable(Throwable $e): string
     return implode(PHP_EOL, $parts);
 }
 
+function applyTwigSetup(Environment &$env, $config) {
+    $repoRoot = is_string($config['repo_root'] ?? null) ? $config['repo_root'] : dirname(__DIR__);
+    $srcRoot = is_string($config['src_root'] ?? null) ? $config['src_root'] : ($repoRoot . DIRECTORY_SEPARATOR . 'src');
+    $assetsRoot = is_string($config['assets_root'] ?? null) ? $config['assets_root'] : ($srcRoot . DIRECTORY_SEPARATOR . 'assets');
+    $dataRoot = is_string($config['data_root'] ?? null) ? $config['data_root'] : ($srcRoot . DIRECTORY_SEPARATOR . 'data');
+    $componentsDir = is_string($config['components_root'] ?? null) ? $config['components_root'] : ($srcRoot . DIRECTORY_SEPARATOR . 'components');
+
+    $repoRoot = realpath($repoRoot) ?: $repoRoot;
+    $srcRoot = realpath($srcRoot) ?: $srcRoot;
+    $assetsRoot = realpath($assetsRoot) ?: $assetsRoot;
+    $dataRoot = realpath($dataRoot) ?: $dataRoot;
+    $componentsDir = realpath($componentsDir) ?: $componentsDir;
+
+  // Add folders to Twig loader paths
+    if (is_dir($srcRoot)) {
+        $env->getLoader()->addPath($srcRoot);
+    }
+    if (is_dir($assetsRoot)) {
+        $env->getLoader()->addPath($assetsRoot);
+    }
+  
+  // Register namespaces for each top level folder in components, so they can be used in templates like this: `{% include '@atoms/button.twig' %}`
+  if (is_dir($componentsDir)) {
+    $folders = scandir($componentsDir);
+    foreach ($folders as $folder) {
+      if ($folder === "." || $folder === "..") {
+        continue;
+      }
+            $folderPath = $componentsDir . DIRECTORY_SEPARATOR . $folder;
+            if (!is_dir($folderPath)) {
+        continue;
+      }
+            $env->getLoader()->addPath($folderPath, $folder);
+    }
+  }
+
+  $env->addExtension(new \Twig\Extension\DebugExtension());
+
+  // Make all data files available as global variables in Twig, with the filename (without extension) as the variable name
+    if (is_dir($dataRoot)) {
+        $files = scandir($dataRoot);
+    foreach ($files as $file) {
+      if ($file === "." || $file === "..") {
+        continue;
+      }
+            $filePath = $dataRoot . DIRECTORY_SEPARATOR . $file;
+      if (is_file($filePath) && pathinfo($filePath, PATHINFO_EXTENSION) === 'json') {
+        $variableName = pathinfo($filePath, PATHINFO_FILENAME);
+                $decoded = json_decode((string) file_get_contents($filePath), true);
+                if (is_array($decoded)) {
+                        $env->addGlobal($variableName, $decoded);
+                }
+      }
+    }
+  }
+
+}
+
 $options = parseArgs($argv);
 $templatePath = $options['template'] ?? '';
 $contextPath = $options['context'] ?? '';
 $componentsRoot = $options['components-root'] ?? dirname($templatePath);
 $alterTwigPath = $options['alter-twig'] ?? '';
+$repoRoot = $options['repo-root'] ?? dirname(__DIR__);
+$srcRoot = $options['src-root'] ?? ($repoRoot . DIRECTORY_SEPARATOR . 'src');
+$assetsRoot = $options['assets-root'] ?? ($srcRoot . DIRECTORY_SEPARATOR . 'assets');
+$dataRoot = $options['data-root'] ?? ($srcRoot . DIRECTORY_SEPARATOR . 'data');
 
 if ($templatePath === '' || !is_file($templatePath)) {
     fwrite(STDERR, "Template not found\n");
@@ -167,13 +229,18 @@ if (is_file($composerAutoload)) {
             $loader = new Twig\Loader\FilesystemLoader($componentsRoot);
             // Pattern data often includes trusted HTML/SVG snippets that should render as markup.
             $twig = new Twig\Environment($loader, ['cache' => false, 'autoescape' => false]);
-            applyAlterTwig($twig, [
+            $twigConfig = [
                 'template_path' => $templatePath,
                 'components_root' => $componentsRoot,
                 'context_path' => $contextPath,
                 'context' => $context,
-                'repo_root' => dirname(__DIR__),
-            ], $alterTwigPath);
+                'repo_root' => $repoRoot,
+                'src_root' => $srcRoot,
+                'assets_root' => $assetsRoot,
+                'data_root' => $dataRoot,
+            ];
+            applyTwigSetup($twig, $twigConfig);
+            applyAlterTwig($twig, $twigConfig, $alterTwigPath);
             $templateName = str_replace(DIRECTORY_SEPARATOR, '/', ltrim(str_replace($componentsRoot, '', $templatePath), DIRECTORY_SEPARATOR));
             echo $twig->render($templateName, $context);
             exit(0);

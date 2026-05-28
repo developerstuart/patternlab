@@ -140,6 +140,14 @@ const renderTemplate = async (templatePath, engine, context) => {
       componentsRoot,
       "--context",
       tmpCtx,
+      "--repo-root",
+      repoRoot,
+      "--src-root",
+      srcRoot,
+      "--assets-root",
+      assetsRoot,
+      "--data-root",
+      paths.dataRoot,
     ];
     if (patternlabConfig.templating?.twig?.alterFile) {
       args.push("--alter-twig", patternlabConfig.templating.twig.alterFile);

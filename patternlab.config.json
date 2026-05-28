@@ -42,7 +42,7 @@
       ".html": "html"
     },
     "twig": {
-      "alterFile": "php/alter-twig.php"
+      "alterFile": null
     }
   },
   "css": {

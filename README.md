@@ -72,3 +72,19 @@ Supported hook names:
 - `afterWriteArtifacts`
 - `beforeClassifyChange`
 - `afterClassifyChange`
+
+## Consumer Twig extension
+
+Consumer repositories can extend Twig by providing a local alter file path in config:
+
+```json
+{
+  "templating": {
+    "twig": {
+      "alterFile": "php/alter-twig.php"
+    }
+  }
+}
+```
+
+This path is resolved relative to the consumer root (not core). If provided, the file should define `addCustomExtension(Environment &$env, $config)`.
