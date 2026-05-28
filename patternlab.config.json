@@ -1,5 +1,13 @@
 {
   "title": "Pattern Lab",
+  "paths": {
+    "srcRoot": "src",
+    "componentsRoot": "components",
+    "dataRoot": "data",
+    "assetsRoot": "assets",
+    "distRoot": "dist",
+    "componentHeadFile": "_component-head.html"
+  },
   "ui": {
     "showModeToggle": true,
     "showThemeToggle": true,
@@ -9,7 +17,33 @@
       "grey"
     ],
     "showViewportControls": true,
-    "enableResizeHandles": true
+    "enableResizeHandles": true,
+    "preview": {
+      "viewportPresets": {
+        "full": null,
+        "desktop": 1440,
+        "tablet": 768,
+        "mobile": 375
+      },
+      "normalHeight": 220,
+      "fullWidth": 1440,
+      "fullHeight": 900,
+      "fullMinHeight": 140,
+      "fullMaxHeight": 280
+    }
+  },
+  "templating": {
+    "engines": {
+      ".twig": "twig",
+      ".mustache": "mustache",
+      ".njk": "nunjucks",
+      ".liquid": "liquid",
+      ".hbs": "handlebars",
+      ".html": "html"
+    },
+    "twig": {
+      "alterFile": "php/alter-twig.php"
+    }
   },
   "css": {
     "enabled": true,
@@ -28,5 +62,12 @@
     "outputFile": "app.js",
     "targetQuery": "last 2 versions",
     "baseFiles": []
-  }
+  },
+  "output": {
+    "componentsDir": "components",
+    "treeFile": "tree.json",
+    "manifestFile": "components.json",
+    "indexFile": "index.html"
+  },
+  "plugins": []
 }

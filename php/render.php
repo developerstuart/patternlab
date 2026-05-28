@@ -93,9 +93,12 @@ function fallbackRender(string $templatePath, array $context, string $components
     return $template;
 }
 
-function applyAlterTwig(Environment $twig, array $config): void
+function applyAlterTwig(Environment $twig, array $config, string $alterTwigPath = ''): void
 {
-    $alterTwigPath = __DIR__ . DIRECTORY_SEPARATOR . 'alter-twig.php';
+    if ($alterTwigPath === '') {
+        $alterTwigPath = __DIR__ . DIRECTORY_SEPARATOR . 'alter-twig.php';
+    }
+
     if (!is_file($alterTwigPath)) {
         return;
     }
@@ -114,6 +117,7 @@ $options = parseArgs($argv);
 $templatePath = $options['template'] ?? '';
 $contextPath = $options['context'] ?? '';
 $componentsRoot = $options['components-root'] ?? dirname($templatePath);
+$alterTwigPath = $options['alter-twig'] ?? '';
 
 if ($templatePath === '' || !is_file($templatePath)) {
     fwrite(STDERR, "Template not found\n");
@@ -137,7 +141,7 @@ if (is_file($composerAutoload)) {
                 'context_path' => $contextPath,
                 'context' => $context,
                 'repo_root' => dirname(__DIR__),
-            ]);
+            ], $alterTwigPath);
             $templateName = str_replace(DIRECTORY_SEPARATOR, '/', ltrim(str_replace($componentsRoot, '', $templatePath), DIRECTORY_SEPARATOR));
             echo $twig->render($templateName, $context);
             exit(0);

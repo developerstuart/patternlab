@@ -1,152 +1,74 @@
-# Pattern Lab (modern minimal)
+# Pattern Lab Core
 
-A modern, minimal Pattern Lab built on Node.js — organise and preview UI components in the browser using any template engine.
+Reusable Pattern Lab core engine built on Node.js + PHP Twig rendering.
 
-## Features
+This repository is the **core package**. Consumer repositories install it and own their own components, data, assets, styles, and plugins.
 
-- **Flexible folder structure** — any top-level folder under `src/components/` becomes a navigation section. No fixed atomic names required; add `atoms/`, `molecules/`, `organisms/`, `templates/`, or whatever you need.
-- **Multiple template engines** — `.twig` (PHP), `.mustache` / `.hbs` (Mustache), `.njk` (Nunjucks), `.liquid` (Liquid), `.html` (pass-through).
-- **Metadata files** — add a `_meta.md` file in any folder with YAML frontmatter to control display name, ordering, and visibility:
-  ```md
-  ---
-  title: Atoms
-  order: 1
-  hidden: false
-  ---
-  ```
-- **JSON data** — each component can have a matching `.json` file. Put shared data in `src/data/*.json` (supports multiple files and nested folders). Folder-level `_global.json` files still cascade into all components within that folder.
-- **Variations** — use `~` in the filename to create component variations:
-  - `button~outline.json` — JSON-only variation; inherits the base template and deep-merges JSON.
-  - `button~ghost.twig` (+ optional `button~ghost.json`) — template variation with its own markup.
-- **SCSS / JS pipeline** — place `.scss` and `.js` files alongside components. They are compiled and merged into `dist/app.css` and `dist/app.js` automatically.
-- **Root config** — `patternlab.config.json` controls title/header behavior, key UI toggles, and CSS/JS pipeline options (including base files and Sass load paths).
-- **Custom component `<head>` markup** — add `src/_component-head.html` to inject extra tags (for example Google/Adobe font stylesheets) into every generated component page.
-- **Dark mode** — toggle in the header. Remembers preference in `localStorage`. Component iframes sync the theme via `postMessage`.
-- **Live reload in dev** — `npm run dev` watches `src/` and uses incremental rebuilds where possible (assets copy, css/js rebuild, component-only rerender, full rebuild fallback).
-- **Responsive preview controls** — component preview supports drag-resize and quick presets (full, desktop, tablet, mobile).
-- **Richer navigation** — click a folder to see all its components in a grid view. Click a component to preview it in a full iframe. Supports multi-level hierarchies (e.g. `atoms/buttons/button-circle`).
-- **Assets folder** — put example images, fonts, and brand media in `src/assets/`. They are copied to `dist/assets/`.
+## What core provides
 
-## Project structure
+- CLI: `patternlab build`, `patternlab serve`, `patternlab dev`
+- Rendering pipeline for Twig/Mustache/Nunjucks/Liquid/HTML templates
+- Component/variation discovery and data merging
+- Aggregated CSS/JS build pipeline
+- Browser preview UI shell and generated artifacts
+- Dev server with live reload and incremental rebuild support
 
-```
-src/
-  data/                     # Global data files merged into every component context
-    site.json
-  _component-head.html      # Optional extra tags for generated component page <head>
-  assets/                   # Images, fonts, and other brand media
-  components/
-    atoms/                  # A component section (name is up to you)
-      _meta.md              # Optional folder metadata (title, order, hidden)
-      _global.json          # Optional data for all components in this folder
-      button.twig           # Component template
-      button.json           # Component data
-      button~outline.json   # JSON-only variation (inherits button.twig)
-      button~ghost.twig     # Template variation
-      button~ghost.json     # Data for the ghost variation
-      button.scss           # Component styles (compiled into app.css)
-    molecules/
-      _meta.md
-      feature-card.twig
-      feature-card.json
-      feature-card.scss
-```
+## What consumer repos provide
 
-## Quick start
+- `src/components/`
+- `src/data/`
+- `src/assets/`
+- `src/scss/`
+- `patternlab.config.json`
+- Optional consumer plugins
+
+See `/tmp/workspace/developerstuart/patternlab/CONSUMER.md` for the full contract and distribution options.
+
+## CLI usage
 
 ```bash
-npm run build     # Build dist/
-npm run serve     # Serve dist/ at http://localhost:3000
-npm run dev       # Serve with watch + live reload
-npm run dev:changed # Watch mode; only rerender components modified since last build
+patternlab build
+patternlab serve
+patternlab dev
 ```
 
-Open `http://localhost:3000` to browse and preview components.
+CLI root/config resolution:
 
-## Scripts
+- Default root: current working directory
+- Override root: `--root <path>` or `PATTERNLAB_ROOT`
+- Config path: `--config <path>` or `PATTERNLAB_CONFIG`
 
-| Command               | Description                                                              |
-| --------------------- | ------------------------------------------------------------------------ |
-| `npm run build`       | Walk `src/components/`, render templates, compile SCSS, copy assets      |
-| `npm run serve`       | Serve `dist/` on port 3000 (env `PORT` overrides)                        |
-| `npm run dev`         | Run dev server with src watcher, incremental rebuilds, and live reload   |
-| `npm run dev:changed` | Start dev mode and only rerender components changed since the last build |
-| `npm test`            | Run integration tests                                                    |
+All consumer paths resolve from the consumer root. Missing optional paths are skipped; they are not treated as hard errors.
 
-## `patternlab.config.json`
+## Local development in this repo
 
-Use `patternlab.config.json` in the repository root to control:
+```bash
+npm install
+npm run build
+npm run serve
+npm run dev
+npm test
+```
 
-- `title` (displayed in Pattern Lab header)
-- `ui.showThemeToggle`, `ui.showViewportControls`, `ui.enableResizeHandles`
-- `css.enabled`, `css.includeComponentFiles`, `css.entryFile`, `css.outputFile`, `css.baseFiles`, `css.loadPaths`
-- `js.compiler`, `js.enabled`, `js.bundle`, `js.includeComponentFiles`, `js.entryFile`, `js.outputFile`, `js.targetQuery`, `js.target`, `js.baseFiles`
+## Plugin hooks
 
-The package version from `package.json` is appended automatically in the header.
-
-### JS bundling toggle
-
-Use `js.bundle` to control whether `dist/app.js` is browser-bundled or raw-concatenated:
-
-- `true` (default): bundles component and base JS with import resolution (recommended).
-- `false`: concatenates raw files without resolving `import` statements (legacy mode).
-
-Example:
+Plugins are configured in `patternlab.config.json` and loaded from consumer-relative paths:
 
 ```json
 {
-  "js": {
-    "compiler": "esbuild",
-    "enabled": true,
-    "bundle": true,
-    "includeComponentFiles": true,
-    "entryFile": null,
-    "outputFile": "app.js",
-    "targetQuery": "last 2 versions",
-    "baseFiles": []
-  }
+  "plugins": ["plugins/example-plugin.mjs"]
 }
 ```
 
-### Browser target and output file customization
+Supported hook names:
 
-- `js.compiler` currently supports `esbuild` and is validated during config load.
-- Use `js.targetQuery` for Browserslist queries (for example, `last 2 versions`).
-- Use `js.target` for explicit esbuild targets (`["chrome124","firefox126","safari17"]`).
-- Use `css.outputFile` / `js.outputFile` to change emitted asset names and paths under `dist/`.
-- Use `css.entryFile` / `js.entryFile` to configure custom primary entry files.
-- Invalid `js.targetQuery` values print a warning and fall back to `es2020`.
-
-## Adding a new section
-
-Create a folder under `src/components/`:
-
-```bash
-mkdir src/components/organisms
-```
-
-Add an optional `_meta.md` for display name and ordering:
-
-```md
----
-title: Organisms
-order: 3
----
-```
-
-Then add component files (`.twig`, `.json`, `.scss`) to the folder.
-
-## Customizing generated component page `<head>`
-
-Create `src/_component-head.html` to inject additional markup into every generated component page.  
-This is useful for external stylesheets such as Google Fonts or Adobe Fonts.
-
-## Optional full Twig engine
-
-`php/render.php` has a safe fallback renderer for basic Twig (`{{ variable }}`, `{% include %}`, `{% if %}`, `{% for %}`).
-
-For full Twig syntax support (filters, extensions, etc.), install Twig via Composer:
-
-```bash
-cd php && composer install
-```
+- `beforeBuild`
+- `afterBuild`
+- `beforeDiscover`
+- `afterDiscover`
+- `beforeRenderItem`
+- `afterRenderItem`
+- `beforeWriteArtifacts`
+- `afterWriteArtifacts`
+- `beforeClassifyChange`
+- `afterClassifyChange`

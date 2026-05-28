@@ -1,14 +1,23 @@
 {
-  "name": "patternlab",
-  "version": "1.0.0",
-  "description": "Minimal modern Pattern Lab with Node + PHP Twig rendering",
+  "name": "@developerstuart/patternlab-core",
+  "version": "1.1.0",
+  "description": "Reusable Pattern Lab core engine with Node + PHP Twig rendering",
   "type": "module",
+  "bin": {
+    "patternlab": "bin/patternlab.mjs"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "php",
+    "src/_layouts"
+  ],
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "serve": "node scripts/serve.mjs",
-    "dev": "node scripts/serve.mjs --watch --since-last-build",
-    "dev:full": "node scripts/serve.mjs --watch",
-    "dev:styles": "node scripts/serve.mjs --watch --styles",
+    "build": "node bin/patternlab.mjs build",
+    "serve": "node bin/patternlab.mjs serve",
+    "dev": "node bin/patternlab.mjs dev",
+    "dev:full": "node bin/patternlab.mjs dev:full",
+    "dev:styles": "node bin/patternlab.mjs dev:styles",
     "test": "node --test"
   },
   "keywords": [

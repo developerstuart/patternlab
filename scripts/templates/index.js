@@ -72,7 +72,12 @@ const escHtml = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 const $ = (id) => document.getElementById(id);
-const VIEWPORT_WIDTHS = { full: null, desktop: 1440, tablet: 768, mobile: 375 };
+const VIEWPORT_WIDTHS = UI_CONFIG.preview?.viewportPresets || {
+  full: null,
+  desktop: 1440,
+  tablet: 768,
+  mobile: 375,
+};
 const nodeMap = new Map();
 const familyById = new Map();
 // nodeId → { li, iconEl, parentId, nodeType }
@@ -334,11 +339,11 @@ const flattenComponents = (node) => {
 };
 
 /* ── Preview iframe: metadata-driven sizing ──────────────── */
-const PREVIEW_NORMAL_H = 220;
-const PREVIEW_FULL_W = 1440;
-const PREVIEW_FULL_H = 900;
-const PREVIEW_FULL_MIN_H = 140;
-const PREVIEW_FULL_MAX_H = 280;
+const PREVIEW_NORMAL_H = UI_CONFIG.preview?.normalHeight ?? 220;
+const PREVIEW_FULL_W = UI_CONFIG.preview?.fullWidth ?? 1440;
+const PREVIEW_FULL_H = UI_CONFIG.preview?.fullHeight ?? 900;
+const PREVIEW_FULL_MIN_H = UI_CONFIG.preview?.fullMinHeight ?? 140;
+const PREVIEW_FULL_MAX_H = UI_CONFIG.preview?.fullMaxHeight ?? 280;
 
 const normalizeCardDisplay = (value) => (value === "full" ? "full" : "normal");
 
