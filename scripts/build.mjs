@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadPatternlabConfig } from "./lib/config.mjs";
+import { createRuntimeContext } from "./lib/runtime-context.mjs";
 import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
 import { createHookRunner, loadPlugins } from "./lib/plugins.mjs";
 import { readJsonSafe, readTextSafe, writeFileSafe } from "./lib/core/fs.mjs";
@@ -16,23 +16,19 @@ import { pathToFileURL } from "url";
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const repoRoot = path.resolve(__dirname, "..");
-const phpRenderer = path.join(repoRoot, "php", "render.php");
-
-const argv = process.argv.slice(2);
+const runtimeContext = createRuntimeContext({ scriptUrl: import.meta.url });
+const { argv, repoRoot, coreRoot, patternlabConfig, paths } = runtimeContext;
+const phpRenderer = path.join(coreRoot, "php", "render.php");
 const getArgValue = (name) => {
   const i = argv.indexOf(name);
   if (i < 0) return null;
   return argv[i + 1] ?? null;
 };
-const patternlabConfig = loadPatternlabConfig(repoRoot);
-const srcRoot = patternlabConfig.paths.srcRoot;
-const componentsRoot = patternlabConfig.paths.componentsRoot;
-const assetsRoot = patternlabConfig.paths.assetsRoot;
-const distRoot = patternlabConfig.paths.distRoot;
-const templatesRoot = patternlabConfig.paths.templatesRoot;
+const srcRoot = paths.srcRoot;
+const componentsRoot = paths.componentsRoot;
+const assetsRoot = paths.assetsRoot;
+const distRoot = paths.distRoot;
+const templatesRoot = paths.templatesRoot;
 const cssOutputFile = patternlabConfig.css.outputFile;
 const jsOutputFile = patternlabConfig.js.outputFile;
 const componentsOutputDir = patternlabConfig.output.componentsDir;

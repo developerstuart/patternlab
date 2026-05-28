@@ -24,7 +24,6 @@ const DEFAULT_CONFIG = {
     assetsRoot: 'assets',
     distRoot: 'dist',
     componentHeadFile: '_component-head.html',
-    templatesRoot: 'scripts/templates',
   },
   ui: {
     showModeToggle: true,
@@ -185,20 +184,23 @@ const normalizePlugins = (plugins, configWarnings) => {
   });
 };
 
-const resolvePathStructure = (repoRoot, pathsConfig, configWarnings) => {
+const resolvePathStructure = (repoRoot, coreRoot, pathsConfig, configWarnings) => {
   const srcRoot = path.resolve(repoRoot, pathsConfig.srcRoot || 'src');
   const componentsRoot = path.resolve(srcRoot, pathsConfig.componentsRoot || 'components');
   const dataRoot = path.resolve(srcRoot, pathsConfig.dataRoot || 'data');
   const assetsRoot = path.resolve(srcRoot, pathsConfig.assetsRoot || 'assets');
   const distRoot = path.resolve(repoRoot, pathsConfig.distRoot || 'dist');
-  const templatesRoot = path.resolve(repoRoot, pathsConfig.templatesRoot || 'scripts/templates');
+  const templatesRoot = path.resolve(coreRoot, 'scripts/templates');
   const componentHeadPath = path.resolve(srcRoot, pathsConfig.componentHeadFile || '_component-head.html');
 
   if (!fs.existsSync(componentsRoot)) {
-    configWarnings.push(`components root does not exist: ${toPosix(path.relative(repoRoot, componentsRoot))}`);
+    configWarnings.push(
+      `No components directory found at ${toPosix(path.relative(repoRoot, componentsRoot))}. ` +
+        'Builds will be empty until component files are added.',
+    );
   }
   if (!fs.existsSync(templatesRoot)) {
-    configWarnings.push(`templates root does not exist: ${toPosix(path.relative(repoRoot, templatesRoot))}`);
+    configWarnings.push('Core UI templates directory was not found in the installed package.');
   }
 
   return {
@@ -212,14 +214,27 @@ const resolvePathStructure = (repoRoot, pathsConfig, configWarnings) => {
   };
 };
 
-export const loadPatternlabConfig = (repoRoot) => {
-  const configPath = path.join(repoRoot, 'patternlab.config.json');
+export const loadPatternlabConfig = (input) => {
+  const options =
+    typeof input === 'string'
+      ? { repoRoot: input, coreRoot: input }
+      : (input ?? {});
+  const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
+  const coreRoot = path.resolve(options.coreRoot ?? repoRoot);
+  const configPath = path.resolve(
+    options.configPath ?? path.join(repoRoot, 'patternlab.config.json'),
+  );
   const loaded = readJsonSafe(configPath) ?? {};
-  const pkg = readJsonSafe(path.join(repoRoot, 'package.json')) ?? {};
+  const pkg = readJsonSafe(path.join(coreRoot, 'package.json')) ?? {};
   const merged = mergeDeep(DEFAULT_CONFIG, loaded);
   const configWarnings = [];
 
-  const pathConfig = resolvePathStructure(repoRoot, merged.paths ?? {}, configWarnings);
+  const pathConfig = resolvePathStructure(
+    repoRoot,
+    coreRoot,
+    merged.paths ?? {},
+    configWarnings,
+  );
 
   const cssBaseCandidates = normalizePathList(repoRoot, merged.css?.baseFiles);
   const jsBaseCandidates = normalizePathList(repoRoot, merged.js?.baseFiles);
@@ -261,7 +276,7 @@ export const loadPatternlabConfig = (repoRoot) => {
       engines: templateEngines,
       twig: {
         ...merged.templating?.twig,
-        alterFile: resolveOptionalFile(repoRoot, merged.templating?.twig?.alterFile),
+        alterFile: resolveOptionalFile(coreRoot, merged.templating?.twig?.alterFile),
       },
     },
     server: {
@@ -304,6 +319,7 @@ export const loadPatternlabConfig = (repoRoot) => {
         toPosix(path.relative(repoRoot, filePath)),
       ),
       configWarnings,
+      configPath: toPosix(path.relative(repoRoot, configPath)),
     },
   };
 };

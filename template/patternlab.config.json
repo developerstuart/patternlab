@@ -1,0 +1,9 @@
+{
+  "title": "My Project Pattern Lab",
+  "css": {
+    "entryFile": "src/scss/style.scss"
+  },
+  "plugins": [
+    "plugins/example-plugin.mjs"
+  ]
+}

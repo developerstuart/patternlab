@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
+const packageVersion = JSON.parse(
+  fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'),
+).version;
 
 const runBuild = (...args) => {
   execFileSync('node', [path.join(repoRoot, 'scripts', 'build.mjs'), ...args], {
@@ -50,7 +53,7 @@ test('build renders components from flat folder structure', { concurrency: false
   // index.html exists and contains the tree
   const indexHtml = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   assert.match(indexHtml, /Pattern Lab/);
-  assert.match(indexHtml, /v1\.0\.0/);
+  assert.match(indexHtml, new RegExp(`v${packageVersion.replace(/\\./g, '\\\\.')}`));
   assert.match(indexHtml, /TREE/);
   assert.match(indexHtml, /id="variant-switch"/);
   assert.match(indexHtml, /~default/);

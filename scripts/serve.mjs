@@ -10,14 +10,14 @@ import { createIncrementalRebuilder } from './lib/serve/incremental.mjs';
 import { contentType, isTemplateExt, loadLiveReloadSnippet } from './lib/serve-utils.mjs';
 
 const runtimeContext = createRuntimeContext({ scriptUrl: import.meta.url });
-const { repoRoot, argv, patternlabConfig, paths } = runtimeContext;
+const { repoRoot, coreRoot, configPath, argv, patternlabConfig, paths } = runtimeContext;
 const { srcRoot, componentsRoot, assetsRoot, distRoot } = paths;
-const buildScript = path.join(repoRoot, 'scripts', 'build.mjs');
+const buildScript = path.join(coreRoot, 'scripts', 'build.mjs');
 const port = Number(process.env.PORT || patternlabConfig.server?.port || 3000);
 const watchMode = argv.includes('--watch');
 const sinceLastBuildMode =
   argv.includes('--since-last-build') || argv.includes('--changed-components');
-const LIVE_RELOAD_SNIPPET = loadLiveReloadSnippet(repoRoot);
+const LIVE_RELOAD_SNIPPET = loadLiveReloadSnippet(coreRoot);
 const plugins = await loadPlugins(repoRoot, patternlabConfig.plugins);
 const hooks = createHookRunner(plugins);
 
@@ -27,7 +27,14 @@ for (const warning of patternlabConfig._meta?.configWarnings ?? []) {
 
 const runBuild = (args = []) =>
   new Promise((resolve, reject) => {
-    const childArgs = [buildScript, ...args];
+    const childArgs = [
+      buildScript,
+      '--root',
+      repoRoot,
+      '--config',
+      configPath,
+      ...args,
+    ];
     const child = spawn('node', childArgs, {
       cwd: repoRoot,
       stdio: ['ignore', 'pipe', 'pipe'],

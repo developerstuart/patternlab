@@ -1,0 +1,15 @@
+{
+  "name": "patternlab-consumer-template",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "patternlab build",
+    "serve": "patternlab serve",
+    "dev": "patternlab dev",
+    "dev:full": "patternlab dev:full",
+    "dev:styles": "patternlab dev:styles"
+  },
+  "devDependencies": {
+    "@yourorg/patternlab-core": "^1.1.0"
+  }
+}
