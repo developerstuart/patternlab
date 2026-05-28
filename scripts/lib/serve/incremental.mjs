@@ -1,5 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import fs from "node:fs";
+import path from "node:path";
 
 export const createIncrementalRebuilder = ({
   srcRoot,
@@ -29,18 +29,25 @@ export const createIncrementalRebuilder = ({
 
   const classifyChange = async ({ eventType, changedPath }) => {
     const abs = path.resolve(changedPath);
-    let payload = { eventType, changedPath: abs, action: 'none' };
-    if (hooks) payload = await hooks.run('beforeClassifyChange', payload);
+    let payload = { eventType, changedPath: abs, action: "none" };
+    if (hooks) payload = await hooks.run("beforeClassifyChange", payload);
 
-    if (!abs.startsWith(srcRoot)) return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+    if (!abs.startsWith(srcRoot))
+      return hooks ? hooks.run("afterClassifyChange", payload) : payload;
 
     if (abs.startsWith(assetsRoot)) {
       const rel = toPosix(path.relative(assetsRoot, abs));
-      if (!rel || rel.startsWith('..')) return { action: 'none' };
-      const distTarget = path.join(distRoot, 'assets', ...rel.split('/'));
+      if (!rel || rel.startsWith("..")) return { action: "none" };
+      const distTarget = path.join(distRoot, "assets", ...rel.split("/"));
       const exists = fs.existsSync(abs);
-      payload = { action: 'asset', src: abs, dist: distTarget, exists, eventType };
-      return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      payload = {
+        action: "asset",
+        src: abs,
+        dist: distTarget,
+        exists,
+        eventType,
+      };
+      return hooks ? hooks.run("afterClassifyChange", payload) : payload;
     }
 
     const relSrc = toPosix(path.relative(srcRoot, abs));
@@ -49,38 +56,47 @@ export const createIncrementalRebuilder = ({
     const exists = fs.existsSync(abs);
 
     if (
-      relSrc === '_global.json' ||
+      relSrc === "_global.json" ||
       abs === componentHeadPath ||
-      relSrc.startsWith('data/')
+      relSrc.startsWith("data/")
     ) {
-      payload = { action: 'full' };
-      return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      payload = { action: "full" };
+      return hooks ? hooks.run("afterClassifyChange", payload) : payload;
+    }
+
+    if (!abs.startsWith(componentsRoot) && (ext === ".scss" || ext === ".js")) {
+      payload = { action: "styles" };
+      return hooks ? hooks.run("afterClassifyChange", payload) : payload;
     }
 
     if (abs.startsWith(componentsRoot)) {
-      if (baseName === '_global.json' || baseName === '_meta.md' || baseName.endsWith('.md')) {
-        payload = { action: 'full' };
-        return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      if (
+        baseName === "_global.json" ||
+        baseName === "_meta.md" ||
+        baseName.endsWith(".md")
+      ) {
+        payload = { action: "full" };
+        return hooks ? hooks.run("afterClassifyChange", payload) : payload;
       }
-      if (ext === '.scss' || ext === '.js') {
-        payload = { action: exists ? 'styles' : 'full' };
-        return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      if (ext === ".scss" || ext === ".js") {
+        payload = { action: exists ? "styles" : "full" };
+        return hooks ? hooks.run("afterClassifyChange", payload) : payload;
       }
-      if (ext === '.json' || isTemplateExt(ext)) {
-        if (!exists || eventType === 'rename') {
-          payload = { action: 'full' };
-          return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      if (ext === ".json" || isTemplateExt(ext)) {
+        if (!exists || eventType === "rename") {
+          payload = { action: "full" };
+          return hooks ? hooks.run("afterClassifyChange", payload) : payload;
         }
         const relComp = toPosix(path.relative(componentsRoot, abs));
-        payload = { action: 'component', source: relComp };
-        return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+        payload = { action: "component", source: relComp };
+        return hooks ? hooks.run("afterClassifyChange", payload) : payload;
       }
-      payload = { action: 'full' };
-      return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+      payload = { action: "full" };
+      return hooks ? hooks.run("afterClassifyChange", payload) : payload;
     }
 
-    payload = { action: 'full' };
-    return hooks ? hooks.run('afterClassifyChange', payload) : payload;
+    payload = { action: "full" };
+    return hooks ? hooks.run("afterClassifyChange", payload) : payload;
   };
 
   const processChanges = async () => {
@@ -102,29 +118,35 @@ export const createIncrementalRebuilder = ({
         classified.push(await classifyChange(change));
       }
 
-      if (classified.some((c) => c.action === 'full')) {
+      if (classified.some((c) => c.action === "full")) {
         try {
           await runBuild([]);
           broadcastReload();
         } catch (err) {
-          console.error('Build failed:', err.message);
+          console.error("Build failed:", err.message);
         }
         continue;
       }
 
       try {
-        for (const c of classified.filter((x) => x.action === 'asset')) {
+        for (const c of classified.filter((x) => x.action === "asset")) {
           if (c.exists) copyFileSafe(c.src, c.dist);
           else removePathSafe(c.dist);
         }
-        if (classified.some((c) => c.action === 'styles')) await runBuild(['--mode', 'styles']);
+        if (classified.some((c) => c.action === "styles"))
+          await runBuild(["--mode", "styles"]);
         const sources = [
-          ...new Set(classified.filter((c) => c.action === 'component').map((c) => c.source)),
+          ...new Set(
+            classified
+              .filter((c) => c.action === "component")
+              .map((c) => c.source),
+          ),
         ];
-        for (const source of sources) await runBuild(['--mode', 'component', '--source', source]);
-        if (classified.some((c) => c.action !== 'none')) broadcastReload();
+        for (const source of sources)
+          await runBuild(["--mode", "component", "--source", source]);
+        if (classified.some((c) => c.action !== "none")) broadcastReload();
       } catch (err) {
-        console.error('Incremental rebuild failed:', err.message);
+        console.error("Incremental rebuild failed:", err.message);
       }
 
       if (!processAgain) break;
