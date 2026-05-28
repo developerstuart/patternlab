@@ -3,6 +3,11 @@
 declare(strict_types=1);
 
 use Twig\Environment;
+use Twig\Error\Error as TwigError;
+
+error_reporting(E_ALL);
+ini_set('display_errors', 'stderr');
+ini_set('log_errors', '1');
 
 function parseArgs(array $argv): array
 {
@@ -113,6 +118,33 @@ function applyAlterTwig(Environment $twig, array $config, string $alterTwigPath 
     throw new RuntimeException('Found php/alter-twig.php but no addCustomExtension(Environment &$env, $config) function was defined.');
 }
 
+function formatThrowable(Throwable $e): string
+{
+    $parts = [];
+    $parts[] = sprintf('%s: %s', get_class($e), $e->getMessage());
+
+    if ($e instanceof TwigError) {
+        $templateFile = method_exists($e, 'getSourceContext') && $e->getSourceContext() !== null
+            ? $e->getSourceContext()->getPath()
+            : '';
+        $templateLine = method_exists($e, 'getTemplateLine') ? $e->getTemplateLine() : 0;
+        if ($templateFile !== '') {
+            $parts[] = sprintf('Template: %s%s', $templateFile, $templateLine > 0 ? ':' . $templateLine : '');
+        } elseif ($templateLine > 0) {
+            $parts[] = sprintf('Template line: %d', $templateLine);
+        }
+    }
+
+    $parts[] = sprintf('Origin: %s:%d', $e->getFile(), $e->getLine());
+    $trace = $e->getTraceAsString();
+    if ($trace !== '') {
+        $parts[] = 'Trace:';
+        $parts[] = $trace;
+    }
+
+    return implode(PHP_EOL, $parts);
+}
+
 $options = parseArgs($argv);
 $templatePath = $options['template'] ?? '';
 $contextPath = $options['context'] ?? '';
@@ -146,7 +178,7 @@ if (is_file($composerAutoload)) {
             echo $twig->render($templateName, $context);
             exit(0);
         } catch (Throwable $e) {
-            fwrite(STDERR, 'Twig renderer error: ' . $e->getMessage() . PHP_EOL);
+            fwrite(STDERR, 'Twig renderer error' . PHP_EOL . formatThrowable($e) . PHP_EOL);
             exit(1);
         }
     }

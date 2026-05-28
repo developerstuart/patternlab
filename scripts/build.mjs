@@ -117,7 +117,7 @@ const execFileUtf8 = (cmd, args) =>
           reject(error);
           return;
         }
-        resolve(stdout);
+        resolve({ stdout, stderr });
       },
     );
   });
@@ -145,7 +145,13 @@ const renderTemplate = async (templatePath, engine, context) => {
       args.push("--alter-twig", patternlabConfig.templating.twig.alterFile);
     }
     try {
-      return await execFileUtf8("php", args);
+      const { stdout, stderr } = await execFileUtf8("php", args);
+      const stderrText = String(stderr ?? "").trim();
+      if (stderrText) {
+        const relTemplatePath = toPosix(path.relative(repoRoot, templatePath));
+        console.warn(`[Twig renderer] ${relTemplatePath}\n${stderrText}`);
+      }
+      return stdout;
     } catch (err) {
       const stderr = err?.stderr ? String(err.stderr).trim() : "";
       const stdout = err?.stdout ? String(err.stdout).trim() : "";
@@ -349,7 +355,9 @@ const discoverDir = (
   for (const [stem, base] of bases) {
     if (base.meta.hidden) continue;
     const compId = relPath ? `${relPath}/${stem}` : stem;
-    const outBase = toPosix(path.join(componentsOutputDir, relPath || "", stem));
+    const outBase = toPosix(
+      path.join(componentsOutputDir, relPath || "", stem),
+    );
     const componentCardDisplay =
       normalizeCardDisplay(
         base.meta.card_display ??
@@ -1048,7 +1056,9 @@ const main = async () => {
       return;
     }
     const idSet = new Set(ids);
-    const componentHeadExtra = readText(patternlabConfig.paths.componentHeadPath);
+    const componentHeadExtra = readText(
+      patternlabConfig.paths.componentHeadPath,
+    );
     for (const item of renderables) {
       if (!idSet.has(item.id)) continue;
       const html = await renderItem(item, componentHeadExtra);
