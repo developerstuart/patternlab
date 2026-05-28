@@ -1,6 +1,6 @@
 {
   "name": "@developerstuart/patternlab-core",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Reusable Pattern Lab core engine with Node + PHP Twig rendering",
   "type": "module",
   "bin": {
@@ -9,8 +9,7 @@
   "files": [
     "bin",
     "scripts",
-    "php",
-    "src/_layouts"
+    "php"
   ],
   "scripts": {
     "build": "node bin/patternlab.mjs build",
@@ -26,7 +25,7 @@
     "twig"
   ],
   "license": "ISC",
-  "devDependencies": {
+  "dependencies": {
     "browserslist": "^4.28.2",
     "browserslist-to-esbuild": "^2.1.1",
     "esbuild": "^0.28.0",
