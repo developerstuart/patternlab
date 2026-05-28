@@ -182,7 +182,30 @@ function applyTwigSetup(Environment &$env, $config) {
   }
 
   $env->addExtension(new \Twig\Extension\DebugExtension());
+  
+  // Force global data file to be truly global by adding its contents to the Twig environment globals, and also making it available as a "global" variable within that global for backward compatibility with existing templates that expect a "global" variable.
+  $global_file = $dataRoot . DIRECTORY_SEPARATOR . 'global.json';
+  $global = [];
+  
+  if(is_file($global_file)) {
+    $decoded = json_decode((string) file_get_contents($global_file), true);
+    if (is_array($decoded)) {
+      if(isset($decoded['global']) && is_array($decoded['global'])) {
+        $global = array_merge($global, $decoded['global']);
+      }
+    }
+  }
 
+  // Set theme_version from package.json to global variable
+  $package_file = $repoRoot . DIRECTORY_SEPARATOR . 'package.json';
+  if(is_file($package_file)) {
+    $package = json_decode(file_get_contents($package_file), true);
+    $global['theme_version'] = isset($package['version']) ? $package['version'] : '1.0.0';
+  }
+
+  $env->addGlobal('global', $global);
+
+  /*
   // Make all data files available as global variables in Twig, with the filename (without extension) as the variable name
     if (is_dir($dataRoot)) {
         $files = scandir($dataRoot);
@@ -200,6 +223,7 @@ function applyTwigSetup(Environment &$env, $config) {
       }
     }
   }
+  */
 
 }
 
