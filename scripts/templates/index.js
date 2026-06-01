@@ -437,6 +437,7 @@ const initPreviewIframe = (iframe) => {
   iframe.style.border = "none";
   iframe.style.display = "block";
   iframe.style.pointerEvents = "none";
+  iframe.scrolling = "no";
 
   if (displayMode === "full") {
     applyFullPreviewScale(iframe);
