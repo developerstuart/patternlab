@@ -158,8 +158,15 @@ const nodeTreeMap = new Map();
 
 const collectFamilies = (node) => {
   if (node.type === "component") {
+    const hasVariations = (node.variations || []).length > 0;
+    // With variations the component's own page aggregates them all ("All");
+    // without variations it is just the single component page.
     const options = [
-      { id: node.id, label: "Default", outputPath: node.outputPath },
+      {
+        id: node.id,
+        label: hasVariations ? "All" : node.label,
+        outputPath: node.outputPath,
+      },
     ].concat(
       (node.variations || []).map((v) => ({
         id: v.id,
@@ -209,7 +216,7 @@ const showNodeById = (id, options = {}) => {
   }
 
   showComponent(
-    node.defaultFor || node.id,
+    node.id,
     node.outputPath,
     node.label,
     options,
@@ -225,10 +232,9 @@ const refreshActive = () => {
   const activeFamily = familyById.get(activeId);
   for (const [id, { btnEl, node }] of nodeMap) {
     const isSelf = id === activeId;
-    const isDefault = node.defaultFor === activeId;
     const isParentOfActive =
       node.type === "component" && !isSelf && activeFamily?.baseId === id;
-    btnEl.classList.toggle("active", isSelf || isDefault || isParentOfActive);
+    btnEl.classList.toggle("active", isSelf || isParentOfActive);
     btnEl.classList.toggle("active-parent", isParentOfActive);
   }
 };
@@ -543,17 +549,12 @@ const showFolder = (
         const hasVars = (child.variations || []).length > 0;
         const varHtml = hasVars
           ? '<div class="ccard-vars">' +
-            '<button class="var-btn var-default" data-act="comp" data-id="' +
-            escHtml(child.id) +
-            '" data-path="' +
-            escHtml(child.outputPath) +
-            '" data-label="' +
-            escHtml(child.label) +
-            '">Default</button>' +
             (child.variations || [])
               .map(
-                (v) =>
-                  '<button class="var-btn" data-act="comp" data-id="' +
+                (v, i) =>
+                  '<button class="var-btn' +
+                  (i === 0 ? " var-default" : "") +
+                  '" data-act="comp" data-id="' +
                   escHtml(v.id) +
                   '" data-path="' +
                   escHtml(v.outputPath) +
@@ -567,6 +568,11 @@ const showFolder = (
             "</div>"
           : "";
         const cardDisplay = normalizeCardDisplay(child.cardDisplay);
+        // Preview the Default variation in the card so it stays compact; the
+        // Open button / preview click still navigate to the component's "All" page.
+        const previewPath = hasVars
+          ? child.variations[0].outputPath
+          : child.outputPath;
         return (
           '<div class="ccard">' +
           '<div class="ccard-hd"><span class="ccard-title">' +
@@ -591,7 +597,7 @@ const showFolder = (
           '"><iframe data-card-display="' +
           escHtml(cardDisplay) +
           '" src="/' +
-          escHtml(child.outputPath) +
+          escHtml(previewPath) +
           '" loading="lazy" title="' +
           escHtml(child.label) +
           '"></iframe></div>' +
@@ -710,18 +716,10 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
       const childUl = document.createElement("ul");
       childUl.className = "tree tree-children";
       li.appendChild(childUl);
+      // Components carry a real "default" variation from the build, so list
+      // their variations directly; the component's own page is the "All" view.
       const childNodes =
-        node.type === "folder"
-          ? node.children || []
-          : [
-              {
-                type: "variation",
-                id: node.id + "~default",
-                label: "Default",
-                outputPath: node.outputPath,
-                defaultFor: node.id,
-              },
-            ].concat(node.variations || []);
+        node.type === "folder" ? node.children || [] : node.variations || [];
       buildTree(childNodes, childUl, depth + 1, node.id);
 
       if (node.type === "folder") {
@@ -761,12 +759,7 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
       icon.textContent = node.type === "variation" ? "◦" : "○";
       btn.addEventListener("click", () => {
         if (node.type === "folder") showFolder(node);
-        else
-          showComponent(
-            node.defaultFor || node.id,
-            node.outputPath,
-            node.label,
-          );
+        else showComponent(node.id, node.outputPath, node.label);
       });
     }
 

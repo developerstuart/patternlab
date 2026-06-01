@@ -357,6 +357,22 @@ const discoverDir = (
     });
   }
 
+  // For components that have variations, expose the base render as an explicit
+  // "default" variation (first) so it gets its own page and the component's own
+  // page can aggregate all variations. Components with no variations are left
+  // untouched and keep a single rendered page.
+  for (const base of bases.values()) {
+    if (base.variations.size === 0 || base.variations.has("default")) continue;
+    const withDefault = new Map();
+    withDefault.set("default", {
+      templatePath: base.templatePath,
+      engine: base.engine,
+      jsonPath: null,
+    });
+    for (const [name, data] of base.variations) withDefault.set(name, data);
+    base.variations = withDefault;
+  }
+
   // Build component nodes
   const componentNodes = [];
   for (const [stem, base] of bases) {
@@ -530,7 +546,10 @@ const resolveAffectedComponentIds = (sourceRelPath, renderables) => {
   const prefix = dir && dir !== "." ? `${dir}/` : "";
 
   if (stem.includes("~")) {
-    return [`${prefix}${stem}`];
+    // A variation also feeds its component's aggregate "All" page, so re-render
+    // both the variation and the base id.
+    const baseStem = stem.slice(0, stem.indexOf("~"));
+    return [`${prefix}${stem}`, `${prefix}${baseStem}`];
   }
 
   const baseId = `${prefix}${stem}`;
@@ -767,22 +786,89 @@ const stripPrivate = (node) => {
 
 // ─── Render a single component or variation ────────────────────────────────────
 
-const renderItem = async (item, componentHeadExtra) => {
+// A component node with variations renders an aggregate "All" page.
+const isAllPage = (item) =>
+  item.type === "component" && (item.variations?.length ?? 0) > 0;
+
+// Source files an item's rendered output depends on. An "All" page depends on
+// every variation it aggregates, so collect their specs rather than the base.
+const collectRenderDeps = (item) => {
+  const specs = isAllPage(item)
+    ? item.variations.map((variation) => variation._render)
+    : [item._render];
+  const files = [];
+  for (const spec of specs) {
+    files.push(
+      spec.templatePath,
+      spec.baseJsonPath,
+      spec.varJsonPath,
+      ...(spec.globalJsonPaths ?? []),
+      ...(spec.metaPaths ?? []),
+    );
+  }
+  return files.filter(Boolean);
+};
+
+// Minimal namespaced styling for the "All" page headings, injected into the
+// page head so it renders regardless of the consumer's own CSS.
+const ALL_PAGE_STYLE = `  <style>
+    .pl-variation { padding: 1.25rem; }
+    .pl-variation + .pl-variation { border-top: 1px solid rgba(127,127,127,0.25); }
+    .pl-variation__title {
+      margin: 0 0 0.75rem; font: 600 0.7rem/1.4 ui-sans-serif, system-ui, sans-serif;
+      text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6;
+    }
+  </style>`;
+
+// Render just the body markup for one render spec (no HTML wrapper).
+const renderBody = async (renderSpec) => {
+  const { templatePath, engine, baseJsonPath, varJsonPath, globalData } =
+    renderSpec;
+  const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
+  const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
+  const context = mergeDeep(globalData, baseData, varData);
+  return renderTemplate(templatePath, engine, context);
+};
+
+const allPageSection = (label, body) =>
+  `<section class="pl-variation">\n<h2 class="pl-variation__title">${escHtml(label)}</h2>\n${body}\n</section>`;
+
+// Build the aggregate "All" page for a component, reusing pre-rendered variation
+// bodies from `bodyById` when available (full build) or rendering on demand.
+const renderAllPage = async (componentNode, head, bodyById) => {
+  const sections = [];
+  for (const variation of componentNode.variations) {
+    const body = bodyById?.has(variation.id)
+      ? bodyById.get(variation.id)
+      : await renderBody(variation._render);
+    sections.push(allPageSection(variation.label, body));
+  }
+  const cardDisplay =
+    normalizeCardDisplay(componentNode.cardDisplay) ?? "normal";
+  return wrapComponent(
+    sections.join("\n"),
+    `${ALL_PAGE_STYLE}\n${head ?? ""}`,
+    `pl-card-${cardDisplay} pl-all`,
+  );
+};
+
+const renderItem = async (item, componentHeadExtra, bodyById) => {
   const renderPayload = await hooks.run("beforeRenderItem", {
     item,
     componentHeadExtra,
   });
   const renderItemInput = renderPayload?.item ?? item;
   const headInput = renderPayload?.componentHeadExtra ?? componentHeadExtra;
-  const { templatePath, engine, baseJsonPath, varJsonPath, globalData } =
-    renderItemInput._render;
-  const baseData = baseJsonPath ? (readJson(baseJsonPath) ?? {}) : {};
-  const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
-  const context = mergeDeep(globalData, baseData, varData);
-  const body = await renderTemplate(templatePath, engine, context);
-  const cardDisplay =
-    normalizeCardDisplay(renderItemInput.cardDisplay) ?? "normal";
-  const wrapped = wrapComponent(body, headInput, `pl-card-${cardDisplay}`);
+  let wrapped;
+  if (isAllPage(renderItemInput)) {
+    wrapped = await renderAllPage(renderItemInput, headInput, bodyById);
+  } else {
+    const body = await renderBody(renderItemInput._render);
+    bodyById?.set(renderItemInput.id, body);
+    const cardDisplay =
+      normalizeCardDisplay(renderItemInput.cardDisplay) ?? "normal";
+    wrapped = wrapComponent(body, headInput, `pl-card-${cardDisplay}`);
+  }
   const afterPayload = await hooks.run("afterRenderItem", {
     item: renderItemInput,
     html: wrapped,
@@ -890,29 +976,40 @@ const writeCssJs = async (tree) => {
 const renderAll = async (tree) => {
   const renderables = flattenRenderables(tree);
   const componentHeadExtra = readText(patternlabConfig.paths.componentHeadPath);
+  // Aggregate "All" pages reuse the bodies of their variations, so render every
+  // leaf (variations + variation-less components) first, then assemble the All
+  // pages from the cached bodies — each variation is rendered exactly once.
+  const leaves = renderables.filter((item) => !isAllPage(item));
+  const aggregates = renderables.filter(isAllPage);
+  const bodyById = new Map();
   const total = renderables.length;
-  const workerCount = Math.max(1, Math.min(renderConcurrency, total));
-  let nextIndex = 0;
   let rendered = 0;
 
+  const writeItem = async (item) => {
+    const html = await renderItem(item, componentHeadExtra, bodyById);
+    const outPath = path.join(distRoot, ...item.outputPath.split("/"));
+    writeFile(outPath, html);
+    rendered += 1;
+    console.log(
+      `[${rendered}/${total}] Rendered ${item.id} → ${toPosix(path.relative(distRoot, outPath))}`,
+    );
+  };
+
+  let nextIndex = 0;
+  const workerCount = Math.max(1, Math.min(renderConcurrency, leaves.length));
   const worker = async () => {
     while (true) {
       const index = nextIndex;
       nextIndex += 1;
-      if (index >= total) return;
-
-      const item = renderables[index];
-      const html = await renderItem(item, componentHeadExtra);
-      const outPath = path.join(distRoot, ...item.outputPath.split("/"));
-      writeFile(outPath, html);
-      rendered += 1;
-      console.log(
-        `[${rendered}/${total}] Rendered ${item.id} → ${toPosix(path.relative(distRoot, outPath))}`,
-      );
+      if (index >= leaves.length) return;
+      await writeItem(leaves[index]);
     }
   };
-
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  // Aggregates depend on the cached bodies above, so assemble them afterwards.
+  for (const item of aggregates) await writeItem(item);
+
   return renderables;
 };
 
@@ -1000,11 +1097,7 @@ const main = async () => {
       const outPath = path.join(distRoot, ...item.outputPath.split("/"));
       const outputMtime = getMtimeMs(outPath);
       const dependencyFiles = [
-        item._render.templatePath,
-        item._render.baseJsonPath,
-        item._render.varJsonPath,
-        ...(item._render.globalJsonPaths ?? []),
-        ...(item._render.metaPaths ?? []),
+        ...collectRenderDeps(item),
         ...rootGlobalDependencyFiles,
         componentHeadPath,
       ].filter(Boolean);

@@ -24,10 +24,23 @@ test('build renders components from flat folder structure', { concurrency: false
 
   const dist = path.join(repoRoot, 'dist');
 
-  // Base component: atoms/button
+  // Component "All" page: atoms/button aggregates every variation under headings
   const buttonHtml = fs.readFileSync(path.join(dist, 'components', 'atoms', 'button.html'), 'utf8');
-  assert.match(buttonHtml, /Primary action/);
-  assert.match(buttonHtml, /btn--primary/);
+  assert.match(buttonHtml, /pl-variation__title">Default/);
+  assert.match(buttonHtml, /pl-variation__title">Ghost/);
+  assert.match(buttonHtml, /pl-variation__title">Outline/);
+  assert.match(buttonHtml, /btn--primary/); // default render
+  assert.match(buttonHtml, /btn--ghost/);   // ghost variation
+  assert.match(buttonHtml, /btn--outline/); // outline variation
+
+  // Standalone Default page (base-only render) still exists alongside "All"
+  const defaultHtml = fs.readFileSync(path.join(dist, 'components', 'atoms', 'button~default.html'), 'utf8');
+  assert.match(defaultHtml, /Primary action/);
+  assert.match(defaultHtml, /btn--primary/);
+  assert.doesNotMatch(defaultHtml, /btn--ghost/);
+
+  // A component with no variations stays a single page (no synthetic default)
+  assert.ok(!fs.existsSync(path.join(dist, 'components', 'molecules', 'feature-card~default.html')));
 
   // JSON-only variation: atoms/button~outline
   const outlineHtml = fs.readFileSync(path.join(dist, 'components', 'atoms', 'button~outline.html'), 'utf8');
@@ -70,6 +83,7 @@ test('build renders components from flat folder structure', { concurrency: false
   const manifest = JSON.parse(fs.readFileSync(path.join(dist, 'components.json'), 'utf8'));
   const ids = manifest.map((m) => m.id);
   assert.ok(ids.includes('atoms/button'));
+  assert.ok(ids.includes('atoms/button~default'));
   assert.ok(ids.includes('atoms/button~outline'));
   assert.ok(ids.includes('atoms/button~ghost'));
   assert.ok(ids.includes('molecules/feature-card'));
