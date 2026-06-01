@@ -360,17 +360,23 @@ const showEmpty = () => {
 };
 
 /* ── Nav: expand tree to reveal a node ──────────────────── */
+const openTreeEntry = (entry) => {
+  if (!entry || entry.li.classList.contains("open")) return;
+  entry.li.classList.add("open");
+  if (entry.iconEl.textContent === "▶") entry.iconEl.textContent = "▼";
+};
+
 const expandToNode = (id) => {
   const entry = nodeTreeMap.get(id);
   if (!entry) return;
+  // Expand the node itself when it is a folder so its children are revealed
+  // (matches a manual folder click); for components we only open ancestors.
+  if (entry.nodeType === "folder") openTreeEntry(entry);
   let pid = entry.parentId;
   while (pid) {
     const p = nodeTreeMap.get(pid);
     if (!p) break;
-    if (!p.li.classList.contains("open")) {
-      p.li.classList.add("open");
-      if (p.iconEl.textContent === "▶") p.iconEl.textContent = "▼";
-    }
+    openTreeEntry(p);
     pid = p.parentId;
   }
 };
