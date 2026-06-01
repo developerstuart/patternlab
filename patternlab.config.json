@@ -9,12 +9,31 @@
     "componentHeadFile": "_component-head.html"
   },
   "ui": {
-    "showModeToggle": true,
-    "showThemeToggle": true,
-    "themes": [
-      "default",
-      "alternative",
-      "grey"
+    "showDarkModeToggle": true,
+    "toggles": [
+      {
+        "id": "theme",
+        "type": "select",
+        "label": "Theme",
+        "attribute": "data-theme",
+        "target": "html",
+        "storageKey": "pl-theme",
+        "values": [
+          {
+            "value": "default",
+            "label": "Default"
+          },
+          {
+            "value": "alternative",
+            "label": "Alternative"
+          },
+          {
+            "value": "grey",
+            "label": "Grey"
+          }
+        ],
+        "default": "default"
+      }
     ],
     "showViewportControls": true,
     "enableResizeHandles": true,

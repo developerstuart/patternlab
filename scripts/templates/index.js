@@ -26,43 +26,115 @@ if (modeBtn) {
 }
 applyMode(document.documentElement.getAttribute("data-mode") || "light");
 
-/* ── Theme ───────────────────────────────────────────── */
-const themeSelect = document.getElementById("theme-switch");
-if (themeSelect) {
-  const savedTheme = localStorage.getItem("pl-theme") || "default";
-  const themeOptions = UI_CONFIG.themes || ["default"];
+/* ── Generic Toggles ─────────────────────────────────── */
+// Normalises a values entry to { value, label }; accepts plain strings or objects.
+const normToggleVal = (v) =>
+  typeof v === "string"
+    ? { value: v, label: v }
+    : { value: String(v.value), label: String(v.label ?? v.value) };
 
-  if (themeOptions.length <= 1) {
-    themeSelect.style.display = "none";
-  } else {
-    themeSelect.innerHTML = themeOptions
-      .map(
-        (theme) =>
-          `<option value="${theme}"${
-            theme === savedTheme ? " selected" : ""
-          }>${theme}</option>`,
-      )
-      .join("");
-    themeSelect.addEventListener("change", () => {
-      const theme = themeSelect.value;
-      localStorage.setItem("pl-theme", theme);
+const broadcastTogglesToFrame = (frameWindow) => {
+  const toggleDefs = UI_CONFIG.toggles || [];
+  toggleDefs.forEach((def) => {
+    if (!def.attribute) return;
+    const storageKey = def.storageKey || `pl-toggle-${def.id}`;
+    const firstVal =
+      Array.isArray(def.values) && def.values.length
+        ? normToggleVal(def.values[0]).value
+        : "";
+    const value = localStorage.getItem(storageKey) || def.default || firstVal;
+    try {
+      frameWindow.postMessage(
+        { type: "pl-attr", attribute: def.attribute, value },
+        "*",
+      );
+    } catch {}
+  });
+};
+
+const setupToggles = () => {
+  const container = $("pl-toggles");
+  if (!container) return;
+  const toggleDefs = UI_CONFIG.toggles || [];
+  toggleDefs.forEach((def) => {
+    if (
+      !def.id ||
+      !def.attribute ||
+      !Array.isArray(def.values) ||
+      def.values.length === 0
+    )
+      return;
+    const storageKey = def.storageKey || `pl-toggle-${def.id}`;
+    const entries = def.values.map(normToggleVal);
+    const defaultValue = def.default || entries[0].value;
+    const savedValue = localStorage.getItem(storageKey) || defaultValue;
+    const targetEl = () =>
+      def.target === "body" ? document.body : document.documentElement;
+
+    const applyValue = (value) => {
+      targetEl().setAttribute(def.attribute, value);
+      localStorage.setItem(storageKey, value);
       document.querySelectorAll("iframe").forEach((f) => {
         try {
-          f.contentWindow.postMessage({ type: "pl-theme", theme }, "*");
+          f.contentWindow.postMessage(
+            { type: "pl-attr", attribute: def.attribute, value },
+            "*",
+          );
         } catch {}
       });
-    });
-    // Apply saved theme on load
-    document.querySelectorAll("iframe").forEach((f) => {
-      try {
-        f.contentWindow.postMessage(
-          { type: "pl-theme", theme: savedTheme },
-          "*",
+    };
+
+    if (def.type === "boolean") {
+      const [offEntry, onEntry] = entries;
+      const btn = document.createElement("button");
+      btn.className = "icon-btn pl-toggle-bool";
+      btn.dataset.toggleId = def.id;
+      btn.setAttribute(
+        "aria-pressed",
+        savedValue === onEntry.value ? "true" : "false",
+      );
+      btn.textContent = def.label || def.id;
+      btn.addEventListener("click", () => {
+        const current = localStorage.getItem(storageKey) || defaultValue;
+        const next = current === onEntry.value ? offEntry.value : onEntry.value;
+        applyValue(next);
+        btn.setAttribute(
+          "aria-pressed",
+          next === onEntry.value ? "true" : "false",
         );
-      } catch {}
-    });
-  }
-}
+      });
+      container.appendChild(btn);
+      applyValue(savedValue);
+    } else {
+      if (entries.length <= 1) return;
+      const wrap = document.createElement("span");
+      wrap.className = "pl-toggle-wrap";
+      const sel = document.createElement("select");
+      sel.className = "pl-toggle-select";
+      sel.dataset.toggleId = def.id;
+      sel.setAttribute("aria-label", def.label || def.id);
+      entries.forEach(({ value, label }) => {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        if (value === savedValue) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", () => applyValue(sel.value));
+      if (def.label) {
+        const lbl = document.createElement("label");
+        lbl.className = "pl-toggle-label";
+        lbl.textContent = def.label;
+        lbl.appendChild(sel);
+        wrap.appendChild(lbl);
+      } else {
+        wrap.appendChild(sel);
+      }
+      container.appendChild(wrap);
+      applyValue(savedValue);
+    }
+  });
+};
 
 /* ── Helpers ──────────────────────────────────────────── */
 const escHtml = (s) =>
@@ -72,6 +144,7 @@ const escHtml = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 const $ = (id) => document.getElementById(id);
+setupToggles();
 const VIEWPORT_WIDTHS = UI_CONFIG.preview?.viewportPresets || {
   full: null,
   desktop: 1440,
@@ -315,15 +388,7 @@ const showComponent = (
   expandToNode(id);
   refreshActive();
   $("preview-frame").onload = () => {
-    try {
-      $("preview-frame").contentWindow.postMessage(
-        {
-          type: "pl-theme",
-          theme: localStorage.getItem("pl-theme") || "light",
-        },
-        "*",
-      );
-    } catch {}
+    broadcastTogglesToFrame($("preview-frame").contentWindow);
   };
 };
 
@@ -384,15 +449,7 @@ const initPreviewIframe = (iframe) => {
   }
 
   iframe.addEventListener("load", () => {
-    try {
-      iframe.contentWindow.postMessage(
-        {
-          type: "pl-theme",
-          theme: localStorage.getItem("pl-theme") || "light",
-        },
-        "*",
-      );
-    } catch {}
+    broadcastTogglesToFrame(iframe.contentWindow);
     if (displayMode === "full") {
       applyFullPreviewScale(iframe);
     }
@@ -684,11 +741,8 @@ if (!UI_CONFIG.enableResizeHandles) {
     el.style.display = "none";
   });
 }
-if (!UI_CONFIG.showModeToggle) {
+if (!UI_CONFIG.showDarkModeToggle) {
   if (modeBtn) modeBtn.style.display = "none";
-}
-if (!UI_CONFIG.showThemeToggle) {
-  if (themeSelect) themeSelect.style.display = "none";
 }
 document.querySelectorAll("#viewport-tools [data-size]").forEach((btn) => {
   btn.addEventListener("click", () => setViewportPreset(btn.dataset.size));

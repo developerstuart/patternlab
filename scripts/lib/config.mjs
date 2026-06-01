@@ -26,9 +26,8 @@ const DEFAULT_CONFIG = {
     componentHeadFile: "_component-head.html",
   },
   ui: {
-    showModeToggle: true,
-    showThemeToggle: true,
-    themes: ["default", "alternative", "grey"],
+    showDarkModeToggle: true,
+    toggles: [],
     showViewportControls: true,
     enableResizeHandles: true,
     preview: {

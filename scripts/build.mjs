@@ -215,10 +215,17 @@ const renderTemplate = async (templatePath, engine, context) => {
 const buildComponentHead = (extraHead = "") => {
   const trimmedExtra = extraHead.trim();
   const extra = trimmedExtra ? `\n${trimmedExtra}\n` : "\n";
+  const toggleRestoreScripts = (patternlabConfig.ui.toggles || [])
+    .filter((t) => t.attribute && (t.storageKey || t.id))
+    .map((t) => {
+      const key = JSON.stringify(t.storageKey || `pl-toggle-${t.id}`);
+      const attr = JSON.stringify(t.attribute);
+      return `  <script>(function(){var v=localStorage.getItem(${key});if(v)document.documentElement.setAttribute(${attr},v);})()</script>`;
+    })
+    .join("\n");
   return `  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <script>(function(){var t=localStorage.getItem('pl-mode');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-mode','dark');})()</script>
-  <script>(function(){var t=localStorage.getItem('pl-theme');if(t)document.documentElement.setAttribute('data-theme',t);})()</script>
+  <script>(function(){var t=localStorage.getItem('pl-mode');if(t==='dark'||(t==null&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-mode','dark');})()</script>${toggleRestoreScripts ? "\n" + toggleRestoreScripts : ""}
   <link rel="stylesheet" href="${toPublicAssetPath(cssOutputFile)}">${extra}  <script src="${toPublicAssetPath(jsOutputFile)}" defer></script>`;
 };
 
@@ -232,9 +239,9 @@ ${buildComponentHead(extraHead)}
 ${body}
 <script>
 window.addEventListener('message', function(e) {
-  if (e.data && e.data.type === 'pl-theme') {
-    document.documentElement.setAttribute('data-theme', e.data.theme);
-    localStorage.setItem('pl-theme', e.data.theme);
+  if (e.data && e.data.type === 'pl-attr') {
+    document.documentElement.setAttribute(e.data.attribute, e.data.value);
+    localStorage.setItem('pl-attr-' + e.data.attribute, e.data.value);
   }
   if (e.data && e.data.type === 'pl-mode') {
     document.documentElement.setAttribute('data-mode', e.data.mode);

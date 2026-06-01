@@ -6,12 +6,12 @@
     <title>__PAGE_TITLE__</title>
     <script>
       (function () {
-        var t = localStorage.getItem("pl-theme");
+        var m = localStorage.getItem("pl-mode");
         if (
-          t === "dark" ||
-          (t == null && matchMedia("(prefers-color-scheme:dark)").matches)
+          m === "dark" ||
+          (m == null && matchMedia("(prefers-color-scheme:dark)").matches)
         )
-          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-mode", "dark");
       })();
     </script>
     <style>
@@ -23,9 +23,7 @@
       <h1>__HEADER_TITLE__ <span class="version">__HEADER_VERSION__</span></h1>
       <span class="count">__TOTAL_COUNT__ component__TOTAL_SUFFIX__</span>
       <div class="spacer"></div>
-      <select id="theme-switch" class="theme-switch">
-        __THEME_OPTIONS__
-      </select>
+      <div id="pl-toggles"></div>
       <button class="icon-btn" id="mode-btn" aria-label="Toggle dark mode">
         🌙 Dark
       </button>

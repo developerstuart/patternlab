@@ -425,6 +425,37 @@ main {
   background: var(--surface2);
   color: var(--accent);
 }
+/* ── Generic Toggles ─────────────────── */
+#pl-toggles {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.pl-toggle-wrap {
+  display: flex;
+  align-items: center;
+}
+.pl-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.pl-toggle-select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.4rem;
+  color: var(--text);
+  font-size: 0.78rem;
+}
+.pl-toggle-bool[aria-pressed="true"] {
+  background: var(--surface2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 /* ── Utility buttons ─────────────────── */
 .icon-btn {
   background: none;
