@@ -230,12 +230,12 @@ const buildComponentHead = (extraHead = "") => {
 };
 
 // Wrap rendered body in a minimal HTML page that includes app.css / app.js
-const wrapComponent = (body, extraHead = "") => `<!doctype html>
+const wrapComponent = (body, extraHead = "", bodyClass = "") => `<!doctype html>
 <html lang="en">
 <head>
 ${buildComponentHead(extraHead)}
 </head>
-<body>
+<body${bodyClass ? ' class="' + bodyClass + '"' : ""}>
 ${body}
 <script>
 window.addEventListener('message', function(e) {
@@ -802,7 +802,9 @@ const renderItem = async (item, componentHeadExtra) => {
   const varData = varJsonPath ? (readJson(varJsonPath) ?? {}) : {};
   const context = mergeDeep(globalData, baseData, varData);
   const body = await renderTemplate(templatePath, engine, context);
-  const wrapped = wrapComponent(body, headInput);
+  const cardDisplay =
+    normalizeCardDisplay(renderItemInput.cardDisplay) ?? "normal";
+  const wrapped = wrapComponent(body, headInput, `pl-card-${cardDisplay}`);
   const afterPayload = await hooks.run("afterRenderItem", {
     item: renderItemInput,
     html: wrapped,
