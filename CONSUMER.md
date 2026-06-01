@@ -83,6 +83,7 @@ Each plugin exports an object with optional hook functions. Hooks run in registr
     - `{ action: 'none' }`
     - `{ action: 'full' }`
     - `{ action: 'styles' }`
+    - `{ action: 'meta' }` — a `_meta.md`/`<component>.md` change; rebuilt via `modified-components` (shared artifacts + only the affected pages)
     - `{ action: 'component', source }`
     - `{ action: 'asset', src, dist, exists, eventType }`
 

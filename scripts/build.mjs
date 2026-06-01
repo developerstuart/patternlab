@@ -250,9 +250,14 @@ const discoverDir = (
   parentGlobal,
   parentCardDisplay = "normal",
   inheritedGlobalJsonPaths = [],
+  inheritedMetaPaths = [],
 ) => {
   if (!fs.existsSync(dir)) return null;
 
+  const folderMetaPath = path.join(dir, "_meta.md");
+  const folderMetaPaths = fs.existsSync(folderMetaPath)
+    ? [...inheritedMetaPaths, folderMetaPath]
+    : inheritedMetaPaths;
   const folderMeta = readFolderMeta(dir);
   const folderCardDisplay = normalizeCardDisplay(
     folderMeta.card_display ??
@@ -307,12 +312,17 @@ const discoverDir = (
 
   for (const [stem, tmpl] of templateFiles) {
     if (stem.includes("~")) continue; // variation templates handled below
-    const compMeta = readMeta(path.join(dir, `${stem}.md`));
+    const componentMetaPath = path.join(dir, `${stem}.md`);
+    const compMeta = readMeta(componentMetaPath);
+    const metaPaths = fs.existsSync(componentMetaPath)
+      ? [...folderMetaPaths, componentMetaPath]
+      : folderMetaPaths;
     bases.set(stem, {
       templatePath: tmpl.fullPath,
       engine: tmpl.engine,
       jsonPath: jsonStems.has(stem) ? path.join(dir, `${stem}.json`) : null,
       meta: compMeta,
+      metaPaths,
       variations: new Map(),
     });
   }
@@ -379,6 +389,7 @@ const discoverDir = (
           varJsonPath: varData.jsonPath,
           globalData: folderGlobal,
           globalJsonPaths: folderGlobalJsonPaths,
+          metaPaths: base.metaPaths,
         },
       });
     }
@@ -399,6 +410,7 @@ const discoverDir = (
         varJsonPath: null,
         globalData: folderGlobal,
         globalJsonPaths: folderGlobalJsonPaths,
+        metaPaths: base.metaPaths,
       },
     });
   }
@@ -413,6 +425,7 @@ const discoverDir = (
       folderGlobal,
       effectiveFolderCardDisplay,
       folderGlobalJsonPaths,
+      folderMetaPaths,
     );
     if (child && !child.hidden && child.children.length > 0)
       folderNodes.push(child);
@@ -991,6 +1004,7 @@ const main = async () => {
         item._render.baseJsonPath,
         item._render.varJsonPath,
         ...(item._render.globalJsonPaths ?? []),
+        ...(item._render.metaPaths ?? []),
         ...rootGlobalDependencyFiles,
         componentHeadPath,
       ].filter(Boolean);

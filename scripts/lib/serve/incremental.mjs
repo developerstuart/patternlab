@@ -70,12 +70,15 @@ export const createIncrementalRebuilder = ({
     }
 
     if (abs.startsWith(componentsRoot)) {
-      if (
-        baseName === "_global.json" ||
-        baseName === "_meta.md" ||
-        baseName.endsWith(".md")
-      ) {
+      if (baseName === "_global.json") {
         payload = { action: "full" };
+        return hooks ? hooks.run("afterClassifyChange", payload) : payload;
+      }
+      // Metadata files (_meta.md / <component>.md) only affect the shared
+      // artifacts and the card display of their own component(s). Rebuild via
+      // modified-components, which re-renders only the affected pages by mtime.
+      if (baseName.endsWith(".md")) {
+        payload = { action: "meta" };
         return hooks ? hooks.run("afterClassifyChange", payload) : payload;
       }
       if (ext === ".scss" || ext === ".js") {
@@ -133,17 +136,24 @@ export const createIncrementalRebuilder = ({
           if (c.exists) copyFileSafe(c.src, c.dist);
           else removePathSafe(c.dist);
         }
-        if (classified.some((c) => c.action === "styles"))
-          await runBuild(["--mode", "styles"]);
-        const sources = [
-          ...new Set(
-            classified
-              .filter((c) => c.action === "component")
-              .map((c) => c.source),
-          ),
-        ];
-        for (const source of sources)
-          await runBuild(["--mode", "component", "--source", source]);
+        if (classified.some((c) => c.action === "meta")) {
+          // modified-components re-discovers, rewrites the shared artifacts,
+          // and re-renders only pages whose sources changed (incl. styles/JS),
+          // so it subsumes the styles/component work for this batch.
+          await runBuild(["--mode", "modified-components"]);
+        } else {
+          if (classified.some((c) => c.action === "styles"))
+            await runBuild(["--mode", "styles"]);
+          const sources = [
+            ...new Set(
+              classified
+                .filter((c) => c.action === "component")
+                .map((c) => c.source),
+            ),
+          ];
+          for (const source of sources)
+            await runBuild(["--mode", "component", "--source", source]);
+        }
         if (classified.some((c) => c.action !== "none")) broadcastReload();
       } catch (err) {
         console.error("Incremental rebuild failed:", err.message);
