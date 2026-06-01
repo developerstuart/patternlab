@@ -187,6 +187,7 @@ main {
 .variant-tabs {
   display: none;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
 }
 .variant-tab {
@@ -198,7 +199,10 @@ main {
   font-size: 0.75rem;
   line-height: 1.4;
   white-space: nowrap;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  transition:
+    background 0.1s,
+    color 0.1s,
+    border-color 0.1s;
 }
 .variant-tab:hover {
   background: var(--surface2);

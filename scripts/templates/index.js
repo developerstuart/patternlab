@@ -227,9 +227,7 @@ const refreshActive = () => {
     const isSelf = id === activeId;
     const isDefault = node.defaultFor === activeId;
     const isParentOfActive =
-      node.type === "component" &&
-      !isSelf &&
-      activeFamily?.baseId === id;
+      node.type === "component" && !isSelf && activeFamily?.baseId === id;
     btnEl.classList.toggle("active", isSelf || isDefault || isParentOfActive);
     btnEl.classList.toggle("active-parent", isParentOfActive);
   }
@@ -495,7 +493,31 @@ const showFolder = (
     directChildren
       .map((child) => {
         if (child.type === "folder") {
-          const count = flattenComponents(child).length;
+          const childLinks = (child.children || [])
+            .filter((c) => !c.hidden)
+            .map((grandchild) => {
+              if (grandchild.type === "folder") {
+                return (
+                  '<li><button class="hlink" data-act="folder" data-id="' +
+                  escHtml(grandchild.id) +
+                  '">📁 ' +
+                  escHtml(grandchild.label) +
+                  "</button></li>"
+                );
+              }
+              return (
+                '<li><button class="hlink" data-act="comp" data-id="' +
+                escHtml(grandchild.id) +
+                '" data-path="' +
+                escHtml(grandchild.outputPath) +
+                '" data-label="' +
+                escHtml(grandchild.label) +
+                '">◦ ' +
+                escHtml(grandchild.label) +
+                "</button></li>"
+              );
+            })
+            .join("");
           return (
             '<div class="ccard ccard-folder" data-folder-id="' +
             escHtml(child.id) +
@@ -506,11 +528,9 @@ const showFolder = (
             '<button class="open-btn" data-act="folder" data-id="' +
             escHtml(child.id) +
             '">Open</button></div>' +
-            '<p class="ccard-count">' +
-            count +
-            " component" +
-            (count !== 1 ? "s" : "") +
-            "</p>" +
+            (childLinks
+              ? '<ul class="hcard-list">' + childLinks + "</ul>"
+              : '<p style="color:var(--text-muted);padding:0.5rem 0.75rem">Empty folder</p>') +
             "</div>"
           );
         }
@@ -651,7 +671,7 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
 
     const btn = document.createElement("button");
     btn.className = "tree-btn";
-    btn.style.paddingLeft = 0.75 + depth * 0.65 + "rem";
+    btn.style.paddingLeft = 0.75 + "rem";
 
     const icon = document.createElement("span");
     icon.className = "icon";
@@ -690,12 +710,7 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
                 defaultFor: node.id,
               },
             ].concat(node.variations || []);
-      buildTree(
-        childNodes,
-        childUl,
-        depth + 1,
-        node.id,
-      );
+      buildTree(childNodes, childUl, depth + 1, node.id);
 
       if (node.type === "folder") {
         // Icon click: toggle expand/collapse only (no navigation)
