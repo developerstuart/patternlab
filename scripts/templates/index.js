@@ -310,26 +310,30 @@ const setupViewportResizing = () => {
 };
 
 const updateVariantSwitcher = (currentId) => {
-  const wrap = $("variant-switch-wrap");
-  const select = $("variant-switch");
+  const tabs = $("variant-tabs");
   const family = familyById.get(currentId);
   if (!family || family.options.length < 2) {
-    wrap.style.display = "none";
-    select.innerHTML = "";
+    tabs.style.display = "none";
+    tabs.innerHTML = "";
     return;
   }
-  wrap.style.display = "inline-flex";
-  select.innerHTML = family.options
+  tabs.style.display = "flex";
+  tabs.innerHTML = family.options
     .map(
       (option) =>
-        '<option value="' +
+        '<button class="variant-tab' +
+        (option.id === currentId ? " active" : "") +
+        '" data-id="' +
         escHtml(option.id) +
+        '" data-path="' +
+        escHtml(option.outputPath) +
+        '" data-label="' +
+        escHtml(option.label) +
         '">' +
         escHtml(option.label) +
-        "</option>",
+        "</button>",
     )
     .join("");
-  select.value = currentId;
 };
 
 const hideAllPanels = () => {
@@ -339,7 +343,7 @@ const hideAllPanels = () => {
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
-  $("variant-switch-wrap").style.display = "none";
+  $("variant-tabs").style.display = "none";
 };
 
 const showEmpty = () => {
@@ -376,7 +380,8 @@ const showComponent = (
   hideAllPanels();
   $("preview-host").style.display = "";
   $("preview-frame").src = "/" + outputPath;
-  $("breadcrumb").textContent = label;
+  const family = familyById.get(id);
+  $("breadcrumb").textContent = family?.baseLabel || label;
   $("full-btn").style.display = "";
   $("viewport-tools").style.display = UI_CONFIG.showViewportControls
     ? ""
@@ -757,10 +762,11 @@ window.addEventListener("resize", () => {
   refreshVisibleFolderCardScales();
 });
 
-$("variant-switch").addEventListener("change", (e) => {
-  const nextId = e.target.value;
-  const family = familyById.get(nextId);
-  const target = family?.options.find((item) => item.id === nextId);
+$("variant-tabs").addEventListener("click", (e) => {
+  const btn = e.target.closest(".variant-tab");
+  if (!btn || btn.classList.contains("active")) return;
+  const f = familyById.get(btn.dataset.id);
+  const target = f?.options.find((o) => o.id === btn.dataset.id);
   if (!target) return;
   showComponent(target.id, target.outputPath, target.label);
 });

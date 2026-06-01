@@ -179,20 +179,31 @@ main {
   color: var(--text);
   font-weight: 500;
 }
-.variant-switch-wrap {
+.variant-tabs {
   display: none;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  gap: 2px;
 }
-.variant-switch {
-  background: var(--surface);
-  color: var(--text);
+.variant-tab {
+  background: none;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0.18rem 0.35rem;
+  border-radius: var(--radius);
+  padding: 0.2rem 0.6rem;
+  color: var(--text-muted);
   font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+.variant-tab:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.variant-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
 }
 .main-content {
   flex: 1;
