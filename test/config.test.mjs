@@ -15,7 +15,7 @@ test('config exposes expanded skeleton surface for defaults', () => {
   const cfg = loadPatternlabConfig(repoRoot);
   assert.equal(cfg.paths.srcRoot, path.join(repoRoot, 'src'));
   assert.equal(cfg.paths.componentsRoot, path.join(repoRoot, 'src', 'components'));
-  assert.equal(cfg.ui.showModeToggle, true);
+  assert.equal(cfg.ui.showDarkModeToggle, true);
   assert.equal(cfg.output.componentsDir, 'components');
   assert.equal(cfg.templating.engines['.twig'], 'twig');
   assert.ok(Array.isArray(cfg.plugins));

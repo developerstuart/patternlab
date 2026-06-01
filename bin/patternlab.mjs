@@ -19,8 +19,15 @@ const commandMap = {
   'dev:styles': ['scripts/serve.mjs', ['--watch', '--styles']],
 };
 
+const USAGE = 'Usage: patternlab <build|serve|dev|dev:full|dev:styles> [args]';
+
+if (command === 'help' || command === '--help' || command === '-h') {
+  console.log(USAGE);
+  process.exit(0);
+}
+
 if (!commandMap[command]) {
-  console.error('Usage: patternlab <build|serve|dev|dev:full|dev:styles> [args]');
+  console.error(USAGE);
   process.exit(1);
 }
 

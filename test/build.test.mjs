@@ -55,7 +55,7 @@ test('build renders components from flat folder structure', { concurrency: false
   assert.match(indexHtml, /Pattern Lab/);
   assert.match(indexHtml, new RegExp(`v${packageVersion.replace(/\\./g, '\\\\.')}`));
   assert.match(indexHtml, /TREE/);
-  assert.match(indexHtml, /id="variant-switch"/);
+  assert.match(indexHtml, /id="variant-tabs"/);
   assert.match(indexHtml, /~default/);
   assert.match(indexHtml, /data-size="desktop"/);
   assert.match(indexHtml, /data-resize="right"/);

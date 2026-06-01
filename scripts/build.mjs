@@ -1,11 +1,17 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createRuntimeContext } from "./lib/runtime-context.mjs";
 import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
 import { createHookRunner, loadPlugins } from "./lib/plugins.mjs";
-import { readJsonSafe, readTextSafe, writeFileSafe } from "./lib/core/fs.mjs";
+import {
+  copyDir,
+  getMtimeMs,
+  readJsonSafe,
+  readTextSafe,
+  writeFileSafe,
+} from "./lib/core/fs.mjs";
+import { toPosix, toPublicAssetPath } from "./lib/core/path.mjs";
 import {
   normalizeCardDisplay as normalizeCardDisplayMeta,
   readFolderMeta as readFolderMetaShared,
@@ -61,31 +67,7 @@ const TEMPLATE_EXTS = new Map(
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
-const toPosix = (v) => v.split(path.sep).join("/");
-const toPublicAssetPath = (value) =>
-  `/${toPosix(String(value).replace(/^\/+/, ""))}`;
-
 const writeFile = writeFileSafe;
-
-const getMtimeMs = (filePath) => {
-  if (!filePath || !fs.existsSync(filePath)) return 0;
-  try {
-    return fs.statSync(filePath).mtimeMs;
-  } catch {
-    return 0;
-  }
-};
-
-const copyDir = (src, dest) => {
-  if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    const s = path.join(src, entry.name);
-    const d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
-    else fs.copyFileSync(s, d);
-  }
-};
 
 const readMeta = readMetaShared;
 const readFolderMeta = readFolderMetaShared;
@@ -621,6 +603,17 @@ const buildCss = async ({
         `/* ${toPosix(path.relative(srcRoot, f))} */\n${fs.readFileSync(f, "utf8")}`,
     )
     .join("\n\n");
+
+  // Resolve `@name` imports to src/scss/generic/_name.scss
+  const genericScssImporter = {
+    findFileUrl(url) {
+      if (!url.startsWith("@")) return null;
+      return pathToFileURL(
+        path.join(srcRoot, "scss", "generic", `_${url.slice(1)}.scss`),
+      );
+    },
+  };
+
   try {
     const sassModule = await import("sass");
     const sass =
@@ -642,21 +635,7 @@ const buildCss = async ({
         loadPaths: [componentsRoot, srcRoot, ...loadPaths],
         style: "expanded",
         charset: false,
-        importers: [
-          {
-            findFileUrl(url) {
-              if (!url.startsWith("@")) {
-                return null;
-              }
-              return pathToFileURL(
-                path.resolve(
-                  fileURLToPath(import.meta.url),
-                  `${srcRoot}/scss/generic/_${url.slice(1)}.scss`,
-                ),
-              );
-            },
-          },
-        ],
+        importers: [genericScssImporter],
       });
 
       const cssExtras = styleFiles
@@ -678,21 +657,7 @@ const buildCss = async ({
         loadPaths: [componentsRoot, srcRoot, ...loadPaths],
         style: "expanded",
         charset: false,
-        importers: [
-          {
-            findFileUrl(url) {
-              if (!url.startsWith("@")) {
-                return null;
-              }
-              return pathToFileURL(
-                path.resolve(
-                  fileURLToPath(import.meta.url),
-                  `${srcRoot}/scss/generic/_${url.slice(1)}.scss`,
-                ),
-              );
-            },
-          },
-        ],
+        importers: [genericScssImporter],
       });
       return `/* ${toPosix(path.relative(srcRoot, filePath))} */\n${result.css}`;
     });

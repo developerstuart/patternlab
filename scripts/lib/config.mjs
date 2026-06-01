@@ -13,10 +13,6 @@ import {
 
 const DEFAULT_CONFIG = {
   title: "Pattern Lab",
-  compatibility: {
-    mode: "v1",
-    preserveLegacyPaths: true,
-  },
   paths: {
     srcRoot: "src",
     componentsRoot: "components",

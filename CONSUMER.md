@@ -29,6 +29,24 @@
 - `plugins` entries are resolved from consumer root.
 - Core UI templates are always loaded from the installed core package, not consumer config.
 - Missing optional consumer files/paths are skipped (not hard errors).
+- Dev server port: `server.port` (default `3000`), overridable with the `PORT` environment variable.
+- Render concurrency: `build.renderConcurrency` (default `4`), overridable with `--concurrency <n>` or `PL_RENDER_CONCURRENCY`.
+
+See the [Configuration reference](./README.md#configuration-reference) in the README for the full list of config keys and defaults.
+
+## Component authoring conventions
+
+These conventions are owned by the consumer's `src/components/` tree and drive discovery:
+
+- **Base component**: a template file with no `~` in its name (e.g. `button.twig`), with an optional sibling `<name>.json` for context.
+- **Variations**: `<base>~<name>.<ext>` — either with their own template (`button~ghost.twig`) or JSON-only (`button~outline.json`) reusing the base template.
+- **Metadata**: folder `_meta.md` and component `<name>.md` files use YAML frontmatter (`title`, `order`, `hidden`, `card_display`).
+- **Data merge order** (deepest wins): global `src/data/**/*.json` → ancestor folder `_global.json` cascade → base `<name>.json` → variation `<name>~<var>.json`.
+- **Ignored by discovery**: files/folders starting with `_`, plus `.gitkeep`.
+
+### Template engines
+
+Engines are mapped by extension via `templating.engines`. **Handlebars caveat:** `.hbs` files are rendered through Mustache for basic `{{var}}` compatibility only — Handlebars helpers, `{{#each}}`, and partials are not supported. Twig requires `php` on `PATH`. See [Template engines](./README.md#template-engines) for the full table.
 
 ## Plugin API
 
