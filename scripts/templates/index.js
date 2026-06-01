@@ -222,9 +222,16 @@ const syncViewToLocation = (options = {}) => {
 };
 
 const refreshActive = () => {
+  const activeFamily = familyById.get(activeId);
   for (const [id, { btnEl, node }] of nodeMap) {
-    const active = id === activeId || node.defaultFor === activeId;
-    btnEl.classList.toggle("active", active);
+    const isSelf = id === activeId;
+    const isDefault = node.defaultFor === activeId;
+    const isParentOfActive =
+      node.type === "component" &&
+      !isSelf &&
+      activeFamily?.baseId === id;
+    btnEl.classList.toggle("active", isSelf || isDefault || isParentOfActive);
+    btnEl.classList.toggle("active-parent", isParentOfActive);
   }
 };
 
@@ -362,9 +369,9 @@ const expandToNode = (id) => {
   while (pid) {
     const p = nodeTreeMap.get(pid);
     if (!p) break;
-    if (p.nodeType === "folder" && !p.li.classList.contains("open")) {
+    if (!p.li.classList.contains("open")) {
       p.li.classList.add("open");
-      p.iconEl.textContent = "▼";
+      if (p.iconEl.textContent === "▶") p.iconEl.textContent = "▼";
     }
     pid = p.parentId;
   }
@@ -687,7 +694,7 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
         childNodes,
         childUl,
         depth + 1,
-        node.type === "folder" ? node.id : parentId,
+        node.id,
       );
 
       if (node.type === "folder") {

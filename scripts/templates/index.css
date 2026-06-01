@@ -110,6 +110,11 @@ aside {
   background: var(--accent);
   color: var(--accent-fg);
 }
+.tree-btn.active-parent {
+  background: none;
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .tree-btn .icon {
   flex-shrink: 0;
   width: 1em;
