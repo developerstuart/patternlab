@@ -576,6 +576,12 @@ const showFolder = (
           varHtml +
           '<div class="ccard-preview ccard-preview--' +
           escHtml(cardDisplay) +
+          '" data-act="comp" data-id="' +
+          escHtml(child.id) +
+          '" data-path="' +
+          escHtml(child.outputPath) +
+          '" data-label="' +
+          escHtml(child.label) +
           '"><iframe data-card-display="' +
           escHtml(cardDisplay) +
           '" src="/' +

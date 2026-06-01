@@ -378,6 +378,9 @@ main {
   background: var(--bg);
   min-height: 60px;
 }
+.ccard-preview[data-act] {
+  cursor: pointer;
+}
 .ccard-preview--normal {
   height: 220px;
 }
