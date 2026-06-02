@@ -26,9 +26,10 @@ test('build renders components from flat folder structure', { concurrency: false
 
   // Component "All" page: atoms/button aggregates every variation under headings
   const buttonHtml = fs.readFileSync(path.join(dist, 'components', 'atoms', 'button.html'), 'utf8');
-  assert.match(buttonHtml, /pl-variation__title">Default/);
-  assert.match(buttonHtml, /pl-variation__title">Ghost/);
-  assert.match(buttonHtml, /pl-variation__title">Outline/);
+  // Each section title is a link to the individual variation page
+  assert.match(buttonHtml, /class="pl-variation__link"[^>]*data-pl-id="atoms\/button~default"[^>]*>Default</);
+  assert.match(buttonHtml, /class="pl-variation__link"[^>]*data-pl-id="atoms\/button~ghost"[^>]*>Ghost</);
+  assert.match(buttonHtml, /class="pl-variation__link"[^>]*data-pl-id="atoms\/button~outline"[^>]*>Outline</);
   assert.match(buttonHtml, /btn--primary/); // default render
   assert.match(buttonHtml, /btn--ghost/);   // ghost variation
   assert.match(buttonHtml, /btn--outline/); // outline variation

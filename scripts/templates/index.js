@@ -824,4 +824,10 @@ window.addEventListener("popstate", () => {
   syncViewToLocation({ updateHistory: false });
 });
 
+// "All" page variation titles post a navigation request from inside the iframe.
+window.addEventListener("message", (e) => {
+  const data = e.data;
+  if (data && data.type === "pl-navigate" && data.id) showNodeById(data.id);
+});
+
 syncViewToLocation({ replaceHistory: true });

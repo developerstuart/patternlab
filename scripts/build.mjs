@@ -816,9 +816,27 @@ const ALL_PAGE_STYLE = `  <style>
     .pl-variation + .pl-variation { border-top: 1px solid rgba(127,127,127,0.25); }
     .pl-variation__title {
       margin: 0 0 0.75rem; font: 600 0.7rem/1.4 ui-sans-serif, system-ui, sans-serif;
-      text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.6;
+      text-transform: uppercase; letter-spacing: 0.06em;
     }
+    .pl-variation__link {
+      color: inherit; text-decoration: none; opacity: 0.6;
+    }
+    .pl-variation__link:hover { opacity: 1; text-decoration: underline; }
   </style>`;
+
+// Forward title clicks to the parent shell so it routes to the individual
+// variation (keeping the UI chrome). Standalone (no parent), the link's href
+// loads the individual page directly.
+const ALL_PAGE_NAV_SCRIPT = `<script>
+document.addEventListener('click', function(e){
+  var link = e.target.closest('a.pl-variation__link');
+  if (!link) return;
+  if (window.parent && window.parent !== window) {
+    e.preventDefault();
+    window.parent.postMessage({ type: 'pl-navigate', id: link.getAttribute('data-pl-id') }, '*');
+  }
+});
+</script>`;
 
 // Render just the body markup for one render spec (no HTML wrapper).
 const renderBody = async (renderSpec) => {
@@ -830,8 +848,8 @@ const renderBody = async (renderSpec) => {
   return renderTemplate(templatePath, engine, context);
 };
 
-const allPageSection = (label, body) =>
-  `<section class="pl-variation">\n<h2 class="pl-variation__title">${escHtml(label)}</h2>\n${body}\n</section>`;
+const allPageSection = (variation, body) =>
+  `<section class="pl-variation">\n<h2 class="pl-variation__title"><a class="pl-variation__link" href="${toPublicAssetPath(variation.outputPath)}" data-pl-id="${escHtml(variation.id)}">${escHtml(variation.label)}</a></h2>\n${body}\n</section>`;
 
 // Build the aggregate "All" page for a component, reusing pre-rendered variation
 // bodies from `bodyById` when available (full build) or rendering on demand.
@@ -841,12 +859,12 @@ const renderAllPage = async (componentNode, head, bodyById) => {
     const body = bodyById?.has(variation.id)
       ? bodyById.get(variation.id)
       : await renderBody(variation._render);
-    sections.push(allPageSection(variation.label, body));
+    sections.push(allPageSection(variation, body));
   }
   const cardDisplay =
     normalizeCardDisplay(componentNode.cardDisplay) ?? "normal";
   return wrapComponent(
-    sections.join("\n"),
+    `${sections.join("\n")}\n${ALL_PAGE_NAV_SCRIPT}`,
     `${ALL_PAGE_STYLE}\n${head ?? ""}`,
     `pl-card-${cardDisplay} pl-all`,
   );
