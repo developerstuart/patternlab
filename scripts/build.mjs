@@ -505,12 +505,13 @@ const discoverDir = (
       folderNodes.push(child);
   }
 
-  // Folders and components share one ordering: by explicit order, then by the
-  // displayed title (so a component can be ordered ahead of a folder).
-  const children = [...folderNodes, ...componentNodes].sort((a, b) => {
-    if (a.order !== b.order) return a.order - b.order;
-    return a.label.localeCompare(b.label);
-  });
+  // Folders always appear above components. Each group is sorted independently
+  // by explicit order, then by displayed title.
+  const byOrderThenTitle = (a, b) =>
+    a.order !== b.order ? a.order - b.order : a.label.localeCompare(b.label);
+  folderNodes.sort(byOrderThenTitle);
+  componentNodes.sort(byOrderThenTitle);
+  const children = [...folderNodes, ...componentNodes];
 
   return {
     type: "folder",

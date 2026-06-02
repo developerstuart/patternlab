@@ -91,9 +91,9 @@ component uses `<name>.md` (e.g. `button.md`); a variation uses
 | `default_label` | component | Relabels the synthetic **Default** variation (e.g. `default_label: Primary`) without changing the component `title`. `defaultLabel` / `default-label` also accepted |
 | `default_order` | component | Sort order for the Default variation (default `1`). `defaultOrder` / `default-order` also accepted |
 
-**Ordering**: within a folder, sub-folders and components share one ordered list
-— sorted by `order` (ascending), then by displayed `title`. Variations are
-ordered the same way among themselves.
+**Ordering**: within a folder, sub-folders always appear above components. Each
+group is sorted independently by `order` (ascending), then by displayed `title`.
+Variations are ordered the same way among themselves.
 
 ### Data merging
 
