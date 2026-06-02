@@ -344,7 +344,7 @@ const updateVariantSwitcher = (currentId) => {
   if (!family || family.options.length < 2) {
     bar.style.display = "none";
     tabs.innerHTML = "";
-    return;
+    return false;
   }
   bar.style.display = "flex";
   tabs.innerHTML = family.options
@@ -367,6 +367,7 @@ const updateVariantSwitcher = (currentId) => {
   // Keep the selected tab in view when it sits off-screen in a long list.
   const active = tabs.querySelector(".variant-tab.active");
   if (active) active.scrollIntoView({ inline: "nearest", block: "nearest" });
+  return true;
 };
 
 const hideAllPanels = () => {
@@ -377,8 +378,7 @@ const hideAllPanels = () => {
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
-  $("variant-bar").style.display = "none";
-  $("view-toggle").style.display = "none";
+  $("variant-row").style.display = "none";
 };
 
 const showEmpty = () => {
@@ -422,9 +422,13 @@ const showComponent = (
   hideAllPanels();
   const family = familyById.get(id);
   $("breadcrumb").textContent = family?.baseLabel || label;
-  if (codeViewEnabled) $("view-toggle").style.display = "";
   if (updateHistory) setRoute(id, { replace: replaceHistory });
-  updateVariantSwitcher(id);
+  $("view-toggle").style.display = codeViewEnabled ? "" : "none";
+  const hasVariants = updateVariantSwitcher(id);
+  // Row 2 carries the variations and the Preview/Code toggle; show it when
+  // either is present.
+  $("variant-row").style.display =
+    codeViewEnabled || hasVariants ? "flex" : "none";
   expandToNode(id);
   refreshActive();
   renderActiveView();
@@ -438,20 +442,20 @@ const renderActiveView = () => {
     b.classList.toggle("active", b.dataset.view === viewMode);
   });
   const outputPath = activeComponent.outputPath;
-  // "Open in new tab" stays available in both modes so the controls row does
-  // not shift when flicking between Preview and Code.
-  $("full-btn").style.display = "";
   $("full-btn").onclick = () => window.open("/" + outputPath, "_blank");
 
+  // Size controls and the Full button are preview tools — hidden in code mode.
   if (codeViewEnabled && viewMode === "code") {
     $("preview-host").style.display = "none";
     $("viewport-tools").style.display = "none";
+    $("full-btn").style.display = "none";
     renderCodeView(activeComponent.id);
     return;
   }
   $("code-view").style.display = "none";
   $("preview-host").style.display = "";
   $("preview-frame").src = "/" + outputPath;
+  $("full-btn").style.display = "";
   $("viewport-tools").style.display = UI_CONFIG.showViewportControls
     ? ""
     : "none";

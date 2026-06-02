@@ -193,12 +193,22 @@ main {
   color: var(--text);
   font-weight: 500;
 }
-/* Row 2: variations as a single horizontally scrollable tab strip */
+/* Row 2: variations (left, fills available width) + view toggle (right) */
+.toolbar-row--variants {
+  border-top: 1px solid var(--border);
+  gap: 0.5rem;
+}
+.toolbar-row--variants .variant-bar {
+  flex: 1; /* fill the space up to the view toggle */
+  min-width: 0;
+}
+.toolbar-row--variants .view-toggle {
+  margin-left: auto; /* stay pinned right even when there are no variations */
+  flex: 0 0 auto;
+}
 .variant-bar {
   display: none; /* JS switches to flex when there are variations */
   align-items: stretch;
-  border-top: 1px solid var(--border);
-  padding: 0 0.5rem;
 }
 .variant-tabs {
   display: flex;
