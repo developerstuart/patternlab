@@ -1097,7 +1097,11 @@ const main = async () => {
       const outPath = path.join(distRoot, ...item.outputPath.split("/"));
       const outputMtime = getMtimeMs(outPath);
       const dependencyFiles = [
-        ...collectRenderDeps(item),
+        item._render.templatePath,
+        item._render.baseJsonPath,
+        item._render.varJsonPath,
+        ...(item._render.globalJsonPaths ?? []),
+        ...(item._render.metaPaths ?? []),
         ...rootGlobalDependencyFiles,
         componentHeadPath,
       ].filter(Boolean);
