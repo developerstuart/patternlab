@@ -22,6 +22,18 @@
     <header>
       <h1>__HEADER_TITLE__ <span class="version">__HEADER_VERSION__</span></h1>
       <span class="count">__TOTAL_COUNT__ component__TOTAL_SUFFIX__</span>
+      <div
+        class="seg viewport-tools"
+        id="viewport-tools"
+        role="group"
+        aria-label="Viewport size"
+        style="display: none"
+      >
+        <button class="seg-btn" data-size="full">Full</button>
+        <button class="seg-btn" data-size="desktop">Desktop</button>
+        <button class="seg-btn" data-size="tablet">Tablet</button>
+        <button class="seg-btn" data-size="mobile">Mobile</button>
+      </div>
       <div class="spacer"></div>
       <div id="pl-toggles"></div>
       <button class="icon-btn" id="mode-btn" aria-label="Toggle dark mode">
@@ -51,18 +63,6 @@
               <button class="seg-btn active" data-view="preview">Preview</button>
               <button class="seg-btn" data-view="code">Code</button>
             </div>
-            <div
-              class="seg viewport-tools"
-              id="viewport-tools"
-              role="group"
-              aria-label="Viewport size"
-              style="display: none"
-            >
-              <button class="seg-btn" data-size="full">Full</button>
-              <button class="seg-btn" data-size="desktop">Desktop</button>
-              <button class="seg-btn" data-size="tablet">Tablet</button>
-              <button class="seg-btn" data-size="mobile">Mobile</button>
-            </div>
             <button
               class="icon-btn"
               id="full-btn"
@@ -73,11 +73,29 @@
             </button>
           </div>
         </div>
-        <nav
-          id="variant-tabs"
-          class="variant-tabs"
-          aria-label="Variations"
-        ></nav>
+        <div class="variant-bar" id="variant-bar" style="display: none">
+          <button
+            class="variant-scroll"
+            id="variant-scroll-left"
+            aria-label="Scroll variations left"
+            tabindex="-1"
+          >
+            ‹
+          </button>
+          <nav
+            id="variant-tabs"
+            class="variant-tabs"
+            aria-label="Variations"
+          ></nav>
+          <button
+            class="variant-scroll"
+            id="variant-scroll-right"
+            aria-label="Scroll variations right"
+            tabindex="-1"
+          >
+            ›
+          </button>
+        </div>
       </div>
       <div class="main-content">
         <div id="preview-host" style="display: none">

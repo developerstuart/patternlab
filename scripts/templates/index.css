@@ -194,23 +194,54 @@ main {
   font-weight: 500;
 }
 /* Row 2: variations as a single horizontally scrollable tab strip */
-.variant-tabs {
+.variant-bar {
   display: none; /* JS switches to flex when there are variations */
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  padding: 0 0.5rem;
+}
+.variant-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: stretch;
   flex-wrap: nowrap;
   gap: 0.25rem;
-  padding: 0 0.75rem;
-  border-top: 1px solid var(--border);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* Hide the scrollbar — scroll via wheel/trackpad or the arrow buttons */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
 }
 .variant-tabs::-webkit-scrollbar {
-  height: 6px;
+  display: none;
 }
-.variant-tabs::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+/* Left/right scroll buttons — shown only when the list overflows */
+.variant-scroll {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  background: var(--surface);
+  border: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.variant-scroll:hover {
+  color: var(--text);
+  background: var(--surface2);
+}
+.variant-scroll:disabled {
+  opacity: 0.3;
+  cursor: default;
+  background: none;
+}
+.variant-bar.has-overflow .variant-scroll {
+  display: flex;
 }
 .variant-tab {
   background: none;
@@ -221,6 +252,7 @@ main {
   color: var(--text-muted);
   font-family: var(--font);
   font-size: 0.78rem;
+  font-weight: 500;
   line-height: 1.4;
   white-space: nowrap;
   transition:
@@ -230,10 +262,11 @@ main {
 .variant-tab:hover {
   color: var(--text);
 }
+/* Active state uses colour + underline only — no weight change, so selecting
+   a tab never shifts the layout. */
 .variant-tab.active {
   color: var(--accent);
   border-bottom-color: var(--accent);
-  font-weight: 600;
 }
 .main-content {
   flex: 1;

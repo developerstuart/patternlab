@@ -326,15 +326,27 @@ const setupViewportResizing = () => {
   });
 };
 
+const updateVariantScrollButtons = () => {
+  const tabs = $("variant-tabs");
+  const bar = $("variant-bar");
+  const overflow = tabs.scrollWidth - tabs.clientWidth > 1;
+  bar.classList.toggle("has-overflow", overflow);
+  const left = $("variant-scroll-left");
+  const right = $("variant-scroll-right");
+  left.disabled = tabs.scrollLeft <= 0;
+  right.disabled = tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 1;
+};
+
 const updateVariantSwitcher = (currentId) => {
   const tabs = $("variant-tabs");
+  const bar = $("variant-bar");
   const family = familyById.get(currentId);
   if (!family || family.options.length < 2) {
-    tabs.style.display = "none";
+    bar.style.display = "none";
     tabs.innerHTML = "";
     return;
   }
-  tabs.style.display = "flex";
+  bar.style.display = "flex";
   tabs.innerHTML = family.options
     .map(
       (option) =>
@@ -351,6 +363,10 @@ const updateVariantSwitcher = (currentId) => {
         "</button>",
     )
     .join("");
+  updateVariantScrollButtons();
+  // Keep the selected tab in view when it sits off-screen in a long list.
+  const active = tabs.querySelector(".variant-tab.active");
+  if (active) active.scrollIntoView({ inline: "nearest", block: "nearest" });
 };
 
 const hideAllPanels = () => {
@@ -361,7 +377,7 @@ const hideAllPanels = () => {
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
-  $("variant-tabs").style.display = "none";
+  $("variant-bar").style.display = "none";
   $("view-toggle").style.display = "none";
 };
 
@@ -421,23 +437,25 @@ const renderActiveView = () => {
   document.querySelectorAll("#view-toggle .seg-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === viewMode);
   });
+  const outputPath = activeComponent.outputPath;
+  // "Open in new tab" stays available in both modes so the controls row does
+  // not shift when flicking between Preview and Code.
+  $("full-btn").style.display = "";
+  $("full-btn").onclick = () => window.open("/" + outputPath, "_blank");
+
   if (codeViewEnabled && viewMode === "code") {
     $("preview-host").style.display = "none";
     $("viewport-tools").style.display = "none";
-    $("full-btn").style.display = "none";
     renderCodeView(activeComponent.id);
     return;
   }
   $("code-view").style.display = "none";
-  const outputPath = activeComponent.outputPath;
   $("preview-host").style.display = "";
   $("preview-frame").src = "/" + outputPath;
-  $("full-btn").style.display = "";
   $("viewport-tools").style.display = UI_CONFIG.showViewportControls
     ? ""
     : "none";
   setViewportPreset(activeViewport === "custom" ? "full" : activeViewport);
-  $("full-btn").onclick = () => window.open("/" + outputPath, "_blank");
   $("preview-frame").onload = () => {
     broadcastTogglesToFrame($("preview-frame").contentWindow);
   };
@@ -950,6 +968,16 @@ $("variant-tabs").addEventListener("click", (e) => {
   if (!target) return;
   showComponent(target.id, target.outputPath, target.label);
 });
+
+// Arrow buttons scroll the variation strip; keep disabled state in sync.
+$("variant-tabs").addEventListener("scroll", updateVariantScrollButtons);
+window.addEventListener("resize", updateVariantScrollButtons);
+const scrollVariants = (dir) => {
+  const tabs = $("variant-tabs");
+  tabs.scrollBy({ left: dir * tabs.clientWidth * 0.7, behavior: "smooth" });
+};
+$("variant-scroll-left").addEventListener("click", () => scrollVariants(-1));
+$("variant-scroll-right").addEventListener("click", () => scrollVariants(1));
 
 $("folder-view").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-act]");
