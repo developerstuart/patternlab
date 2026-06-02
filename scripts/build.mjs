@@ -416,14 +416,37 @@ const discoverDir = (
           base.meta["card-display"],
       ) ?? effectiveFolderCardDisplay;
 
+    // The default variation's label/order can be overridden from the
+    // component's own .md (e.g. default_label: Primary), so the component stays
+    // "Button" while its default render shows as "Primary".
+    const defaultLabel =
+      base.meta.default_label ??
+      base.meta.defaultLabel ??
+      base.meta["default-label"] ??
+      "Default";
+    const defaultOrder =
+      base.meta.default_order ??
+      base.meta.defaultOrder ??
+      base.meta["default-order"] ??
+      1;
+
     const varNodes = [];
     for (const [varName, varData] of base.variations) {
+      const isDefault = varName === "default";
       const varId = `${compId}~${varName}`;
       const varOut = `${outBase}~${varName}.html`;
+      // Variations can carry their own <base>~<var>.md for title/order/hidden.
+      const varMdPath = path.join(dir, `${stem}~${varName}.md`);
+      const varMeta = readMeta(varMdPath);
+      if (varMeta.hidden) continue;
+      const varMetaPaths = fs.existsSync(varMdPath)
+        ? [...base.metaPaths, varMdPath]
+        : base.metaPaths;
       varNodes.push({
         type: "variation",
         id: varId,
-        label: toLabel(varName),
+        label: varMeta.title ?? (isDefault ? defaultLabel : toLabel(varName)),
+        order: varMeta.order ?? (isDefault ? defaultOrder : 1),
         cardDisplay: componentCardDisplay,
         outputPath: varOut,
         _render: {
@@ -433,17 +456,22 @@ const discoverDir = (
           varJsonPath: varData.jsonPath,
           globalData: folderGlobal,
           globalJsonPaths: folderGlobalJsonPaths,
-          metaPaths: base.metaPaths,
+          metaPaths: varMetaPaths,
         },
         _code: codeSourcesFor(stem, varName, base, varData),
       });
     }
+    // Order by explicit order, then by displayed title.
+    varNodes.sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      return a.label.localeCompare(b.label);
+    });
 
     componentNodes.push({
       type: "component",
       id: compId,
       label: base.meta.title ?? toLabel(stem),
-      order: base.meta.order ?? 999,
+      order: base.meta.order ?? 1,
       hidden: false,
       cardDisplay: componentCardDisplay,
       outputPath: `${outBase}.html`,
@@ -477,12 +505,9 @@ const discoverDir = (
       folderNodes.push(child);
   }
 
-  // Sort components: by order then alphabetically
-  componentNodes.sort((a, b) => {
-    if (a.order !== b.order) return a.order - b.order;
-    return a.label.localeCompare(b.label);
-  });
-  folderNodes.sort((a, b) => {
+  // Folders and components share one ordering: by explicit order, then by the
+  // displayed title (so a component can be ordered ahead of a folder).
+  const children = [...folderNodes, ...componentNodes].sort((a, b) => {
     if (a.order !== b.order) return a.order - b.order;
     return a.label.localeCompare(b.label);
   });
@@ -491,11 +516,11 @@ const discoverDir = (
     type: "folder",
     id: relPath || "__root__",
     label: folderMeta.title ?? toLabel(path.basename(dir)),
-    order: folderMeta.order ?? 999,
+    order: folderMeta.order ?? 1,
     hidden: folderMeta.hidden ?? false,
     cardDisplay: effectiveFolderCardDisplay,
     folderPath: relPath || "",
-    children: [...folderNodes, ...componentNodes],
+    children,
     _scss: scssFiles,
     _js: jsFiles,
   };

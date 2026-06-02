@@ -205,3 +205,25 @@ test('code artifacts include variation-level scss/js', { concurrency: false }, (
     runBuild();
   }
 });
+
+test('variation .md sets order/title; component .md overrides default label', { concurrency: false }, () => {
+  const dir = path.join(repoRoot, 'src', 'components', 'atoms');
+  const ghostMd = path.join(dir, 'button~ghost.md');
+  const buttonMd = path.join(dir, 'button.md');
+  fs.writeFileSync(ghostMd, '---\norder: 0\ntitle: Spooky\n---\n', 'utf8');
+  fs.writeFileSync(buttonMd, '---\ntitle: Button\ndefault_label: Primary\n---\n', 'utf8');
+  try {
+    runBuild();
+    const tree = JSON.parse(fs.readFileSync(path.join(repoRoot, 'dist', 'tree.json'), 'utf8'));
+    const find = (n, id) => (n.id === id ? n : (n.children || []).reduce((a, c) => a || find(c, id), null));
+    const button = find(tree, 'atoms/button');
+    // Component title unchanged; default render relabelled via default_label
+    assert.equal(button.label, 'Button');
+    // order:0 first, then order:1 by title (Outline before Primary)
+    assert.deepEqual(button.variations.map((v) => v.label), ['Spooky', 'Outline', 'Primary']);
+  } finally {
+    fs.rmSync(ghostMd, { force: true });
+    fs.rmSync(buttonMd, { force: true });
+    runBuild();
+  }
+});

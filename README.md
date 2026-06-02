@@ -76,17 +76,24 @@ Discovery is convention-based:
 - **Files and folders starting with `_`** (and `.gitkeep`) are ignored by
   discovery — use this for partials and includes.
 
-### Component & folder metadata (`_meta.md` / `<name>.md`)
+### Component & folder metadata (`_meta.md` / `<name>.md` / `<name>~<var>.md`)
 
 Metadata is YAML frontmatter in a Markdown file. A folder uses `_meta.md`; a
-component uses `<name>.md` (e.g. `button.md`). Supported keys:
+component uses `<name>.md` (e.g. `button.md`); a variation uses
+`<name>~<var>.md` (e.g. `button~ghost.md`). Supported keys:
 
 | Key | Applies to | Effect |
 | --- | --- | --- |
-| `title` | folder, component | Display label (defaults to a humanized file/folder name) |
-| `order` | folder, component | Sort order within its parent (default `999`) |
-| `hidden` | folder, component | When `true`, excluded from the build/UI |
+| `title` | folder, component, variation | Display label (defaults to a humanized file/folder name) |
+| `order` | folder, component, variation | Sort order within its parent (default `1`) |
+| `hidden` | folder, component, variation | When `true`, excluded from the build/UI |
 | `card_display` | folder, component | `normal` or `full` preview card sizing; inherited by children. `cardDisplay` / `card-display` are also accepted |
+| `default_label` | component | Relabels the synthetic **Default** variation (e.g. `default_label: Primary`) without changing the component `title`. `defaultLabel` / `default-label` also accepted |
+| `default_order` | component | Sort order for the Default variation (default `1`). `defaultOrder` / `default-order` also accepted |
+
+**Ordering**: within a folder, sub-folders and components share one ordered list
+— sorted by `order` (ascending), then by displayed `title`. Variations are
+ordered the same way among themselves.
 
 ### Data merging
 
