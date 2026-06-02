@@ -11,6 +11,7 @@ This repository is the **core package**. Consumer repositories install it and ow
 - Component/variation discovery and data merging
 - Aggregated CSS/JS build pipeline
 - Browser preview UI shell and generated artifacts
+- In-app component source viewer (template/SCSS/JS/data) with optional syntax highlighting
 - Dev server with live reload and incremental rebuild support
 
 ## What consumer repos provide
@@ -157,6 +158,10 @@ and `plugins` resolve from the consumer root.
     "showDarkModeToggle": true,
     "showViewportControls": true,
     "enableResizeHandles": true,
+    "code": {
+      "enabled": true,                // show the "Code" view (template/SCSS/JS/data source) per component
+      "highlight": true               // syntax-highlight the code view (inlines a small highlighter)
+    },
     "toggles": [                    // custom attribute toggles rendered in the toolbar
       {
         "id": "theme",

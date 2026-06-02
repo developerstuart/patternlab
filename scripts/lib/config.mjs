@@ -26,6 +26,10 @@ const DEFAULT_CONFIG = {
     toggles: [],
     showViewportControls: true,
     enableResizeHandles: true,
+    code: {
+      enabled: true,
+      highlight: true,
+    },
     preview: {
       viewportPresets: {
         full: null,

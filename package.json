@@ -29,6 +29,7 @@
     "browserslist": "^4.28.2",
     "browserslist-to-esbuild": "^2.1.1",
     "esbuild": "^0.28.0",
+    "highlight.js": "^11.11.1",
     "liquidjs": "^10.27.0",
     "mustache": "^4.2.0",
     "nunjucks": "^3.2.4",

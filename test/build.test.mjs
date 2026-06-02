@@ -162,3 +162,46 @@ test('build merges global data from multiple src/data JSON files', { concurrency
     runBuild();
   }
 });
+
+test('build emits component source artifacts (code view)', { concurrency: false }, () => {
+  runBuild();
+  const codeDir = path.join(repoRoot, 'dist', 'code');
+
+  // Base/All component: template + scss + js + data
+  const button = JSON.parse(fs.readFileSync(path.join(codeDir, 'atoms', 'button.json'), 'utf8'));
+  const types = button.files.map((f) => f.type);
+  assert.ok(types.includes('template'));
+  assert.ok(types.includes('scss'));
+  assert.ok(types.includes('js'));
+  assert.ok(types.includes('data'));
+  const tpl = button.files.find((f) => f.type === 'template');
+  assert.equal(tpl.name, 'button.twig');
+  assert.equal(tpl.lang, 'twig');
+  assert.match(tpl.content, /btn--primary|class="btn/);
+
+  // Variation uses its own template + base data + variation data
+  const ghost = JSON.parse(fs.readFileSync(path.join(codeDir, 'atoms', 'button~ghost.json'), 'utf8'));
+  assert.equal(ghost.files.find((f) => f.type === 'template').name, 'button~ghost.twig');
+  const ghostData = ghost.files.filter((f) => f.type === 'data').map((f) => f.name);
+  assert.deepEqual(ghostData, ['button.json', 'button~ghost.json']);
+
+  // Component with no JS file omits the js entry
+  const tag = JSON.parse(fs.readFileSync(path.join(codeDir, 'atoms', 'tag.json'), 'utf8'));
+  assert.ok(!tag.files.some((f) => f.type === 'js'));
+});
+
+test('code artifacts include variation-level scss/js', { concurrency: false }, () => {
+  const ghostScss = path.join(repoRoot, 'src', 'components', 'atoms', 'button~ghost.scss');
+  fs.writeFileSync(ghostScss, '.btn--ghost { opacity: 0.9; }\n', 'utf8');
+  try {
+    runBuild();
+    const ghost = JSON.parse(
+      fs.readFileSync(path.join(repoRoot, 'dist', 'code', 'atoms', 'button~ghost.json'), 'utf8'),
+    );
+    const scssNames = ghost.files.filter((f) => f.type === 'scss').map((f) => f.name);
+    assert.deepEqual(scssNames, ['button.scss', 'button~ghost.scss']);
+  } finally {
+    fs.rmSync(ghostScss, { force: true });
+    runBuild();
+  }
+});

@@ -188,6 +188,12 @@ collectFamilies(TREE);
 /* ── View management ─────────────────────────────────── */
 let activeId = null;
 let activeViewport = "full";
+let activeComponent = null; // { id, outputPath, label } for the open component
+const codeViewEnabled = !(UI_CONFIG.code && UI_CONFIG.code.enabled === false);
+let viewMode =
+  codeViewEnabled && localStorage.getItem("pl-view-mode") === "code"
+    ? "code"
+    : "preview";
 
 const setRoute = (id, { replace = false } = {}) => {
   const nextUrl = id ? "?id=" + encodeURIComponent(id) : location.pathname;
@@ -351,10 +357,12 @@ const hideAllPanels = () => {
   $("preview-host").style.display = "none";
   $("folder-view").style.display = "none";
   $("home-view").style.display = "none";
+  $("code-view").style.display = "none";
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
   $("variant-tabs").style.display = "none";
+  $("view-toggle").style.display = "none";
 };
 
 const showEmpty = () => {
@@ -394,24 +402,169 @@ const showComponent = (
   { updateHistory = true, replaceHistory = false } = {},
 ) => {
   activeId = id;
+  activeComponent = { id, outputPath, label };
   hideAllPanels();
-  $("preview-host").style.display = "";
-  $("preview-frame").src = "/" + outputPath;
   const family = familyById.get(id);
   $("breadcrumb").textContent = family?.baseLabel || label;
+  if (codeViewEnabled) $("view-toggle").style.display = "";
+  if (updateHistory) setRoute(id, { replace: replaceHistory });
+  updateVariantSwitcher(id);
+  expandToNode(id);
+  refreshActive();
+  renderActiveView();
+};
+
+// Render the open component as either the live preview or its source code,
+// based on the persisted view mode.
+const renderActiveView = () => {
+  if (!activeComponent) return;
+  document.querySelectorAll("#view-toggle .view-btn").forEach((b) => {
+    b.classList.toggle("active", b.dataset.view === viewMode);
+  });
+  if (codeViewEnabled && viewMode === "code") {
+    $("preview-host").style.display = "none";
+    $("viewport-tools").style.display = "none";
+    $("full-btn").style.display = "none";
+    renderCodeView(activeComponent.id);
+    return;
+  }
+  $("code-view").style.display = "none";
+  const outputPath = activeComponent.outputPath;
+  $("preview-host").style.display = "";
+  $("preview-frame").src = "/" + outputPath;
   $("full-btn").style.display = "";
   $("viewport-tools").style.display = UI_CONFIG.showViewportControls
     ? ""
     : "none";
   setViewportPreset(activeViewport === "custom" ? "full" : activeViewport);
   $("full-btn").onclick = () => window.open("/" + outputPath, "_blank");
-  if (updateHistory) setRoute(id, { replace: replaceHistory });
-  updateVariantSwitcher(id);
-  expandToNode(id);
-  refreshActive();
   $("preview-frame").onload = () => {
     broadcastTogglesToFrame($("preview-frame").contentWindow);
   };
+};
+
+/* ── Code view ───────────────────────────────────────────── */
+const CODE_TAB_LABELS = {
+  template: "Template",
+  scss: "SCSS",
+  js: "JS",
+  data: "Data",
+};
+const CODE_TAB_ORDER = ["template", "scss", "js", "data"];
+const codeCache = new Map();
+let codeRequestToken = 0;
+
+const buildCodeHtml = (data) => {
+  const files = (data && data.files) || [];
+  if (!files.length)
+    return '<p class="pl-code-empty">No source available for this component.</p>';
+  const types = CODE_TAB_ORDER.filter((t) => files.some((f) => f.type === t));
+  const tabs = types
+    .map(
+      (t, i) =>
+        '<button class="pl-code-tab' +
+        (i === 0 ? " active" : "") +
+        '" data-code-tab="' +
+        t +
+        '">' +
+        CODE_TAB_LABELS[t] +
+        "</button>",
+    )
+    .join("");
+  const groups = types
+    .map((t, i) => {
+      const inner = files
+        .filter((f) => f.type === t)
+        .map(
+          (f) =>
+            '<div class="pl-code-file"><div class="pl-code-file-hd">' +
+            '<span class="pl-code-file-name">' +
+            escHtml(f.name) +
+            "</span>" +
+            '<button class="pl-code-copy" type="button">Copy</button></div>' +
+            '<div class="pl-code"><pre><code class="language-' +
+            escHtml(f.lang) +
+            '">' +
+            escHtml(f.content) +
+            "</code></pre></div></div>",
+        )
+        .join("");
+      return (
+        '<div class="pl-code-files" data-code-group="' +
+        t +
+        '"' +
+        (i === 0 ? "" : ' style="display:none"') +
+        ">" +
+        inner +
+        "</div>"
+      );
+    })
+    .join("");
+  return '<div class="pl-code-tabs">' + tabs + "</div>" + groups;
+};
+
+const wireCodeView = () => {
+  const root = $("code-view");
+  if (UI_CONFIG.code && UI_CONFIG.code.highlight && window.hljs) {
+    root.querySelectorAll("pre code").forEach((el) => {
+      try {
+        window.hljs.highlightElement(el);
+      } catch (e) {
+        /* ignore highlight failures */
+      }
+    });
+  }
+  root.querySelectorAll(".pl-code-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const t = tab.dataset.codeTab;
+      root
+        .querySelectorAll(".pl-code-tab")
+        .forEach((b) => b.classList.toggle("active", b === tab));
+      root.querySelectorAll("[data-code-group]").forEach((g) => {
+        g.style.display = g.dataset.codeGroup === t ? "" : "none";
+      });
+    });
+  });
+  root.querySelectorAll(".pl-code-copy").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const code = btn.closest(".pl-code-file").querySelector("code");
+      const text = code ? code.textContent : "";
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = "Copied";
+          setTimeout(() => {
+            btn.textContent = "Copy";
+          }, 1200);
+        });
+      }
+    });
+  });
+};
+
+const renderCodeView = (id) => {
+  $("code-view").style.display = "";
+  const token = ++codeRequestToken;
+  const render = (data) => {
+    if (token !== codeRequestToken) return; // a newer request superseded this
+    $("code-view").innerHTML = buildCodeHtml(data);
+    wireCodeView();
+  };
+  if (codeCache.has(id)) {
+    render(codeCache.get(id));
+    return;
+  }
+  $("code-view").innerHTML = '<p class="pl-code-empty">Loading source…</p>';
+  fetch("/code/" + id + ".json")
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+    .then((data) => {
+      codeCache.set(id, data);
+      render(data);
+    })
+    .catch(() => {
+      if (token === codeRequestToken)
+        $("code-view").innerHTML =
+          '<p class="pl-code-empty">No source available for this component.</p>';
+    });
 };
 
 const flattenComponents = (node) => {
@@ -828,6 +981,19 @@ window.addEventListener("popstate", () => {
 window.addEventListener("message", (e) => {
   const data = e.data;
   if (data && data.type === "pl-navigate" && data.id) showNodeById(data.id);
+});
+
+// Preview / Code view toggle
+$("view-toggle").addEventListener("click", (e) => {
+  const btn = e.target.closest(".view-btn");
+  if (!btn || btn.dataset.view === viewMode) return;
+  viewMode = btn.dataset.view;
+  try {
+    localStorage.setItem("pl-view-mode", viewMode);
+  } catch (err) {
+    /* ignore storage failures */
+  }
+  renderActiveView();
 });
 
 syncViewToLocation({ replaceHistory: true });

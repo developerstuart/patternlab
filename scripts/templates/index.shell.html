@@ -43,6 +43,16 @@
           class="variant-tabs"
           aria-label="Variations"
         ></nav>
+        <div
+          class="view-toggle"
+          id="view-toggle"
+          role="group"
+          aria-label="View mode"
+          style="display: none"
+        >
+          <button class="view-btn active" data-view="preview">Preview</button>
+          <button class="view-btn" data-view="code">Code</button>
+        </div>
         <div class="spacer"></div>
         <div class="viewport-tools" id="viewport-tools" style="display: none">
           <button class="size-btn" data-size="full">Full</button>
@@ -82,10 +92,12 @@
         </div>
         <div id="home-view" style="display: none"></div>
         <div id="folder-view" style="display: none"></div>
+        <div id="code-view" style="display: none"></div>
         <div class="empty" id="empty-msg">← Select a component or folder</div>
       </div>
     </main>
 
+    __HIGHLIGHTER__
     <script>
       __INDEX_JS__;
     </script>

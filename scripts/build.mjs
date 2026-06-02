@@ -280,6 +280,8 @@ const discoverDir = (
   const jsonStems = new Set(); // stems that have a .json file
   const scssFiles = [];
   const jsFiles = [];
+  const scssByStem = new Map(); // stem (incl. ~variation) → .scss path
+  const jsByStem = new Map(); // stem (incl. ~variation) → .js path
   const subDirs = [];
 
   for (const entry of fs
@@ -301,8 +303,10 @@ const discoverDir = (
       jsonStems.add(stem);
     } else if (ext === ".scss") {
       scssFiles.push(fullPath);
+      scssByStem.set(stem, fullPath);
     } else if (ext === ".js") {
       jsFiles.push(fullPath);
+      jsByStem.set(stem, fullPath);
     }
     // .md files alongside components are read on-demand below
   }
@@ -373,6 +377,30 @@ const discoverDir = (
     base.variations = withDefault;
   }
 
+  // Resolve the raw source files behind a component/variation for the in-app
+  // code view. SCSS/JS may be component-level (button.scss) or variation-level
+  // (button~ghost.scss); both are included for a variation.
+  const codeSourcesFor = (stem, varName, baseInfo, varData) => {
+    const fullStem = varName ? `${stem}~${varName}` : stem;
+    return {
+      template: varName
+        ? { path: varData.templatePath, engine: varData.engine }
+        : { path: baseInfo.templatePath, engine: baseInfo.engine },
+      scss: (varName
+        ? [scssByStem.get(stem), scssByStem.get(fullStem)]
+        : [scssByStem.get(stem)]
+      ).filter(Boolean),
+      js: (varName
+        ? [jsByStem.get(stem), jsByStem.get(fullStem)]
+        : [jsByStem.get(stem)]
+      ).filter(Boolean),
+      data: (varName
+        ? [baseInfo.jsonPath, varData.jsonPath]
+        : [baseInfo.jsonPath]
+      ).filter(Boolean),
+    };
+  };
+
   // Build component nodes
   const componentNodes = [];
   for (const [stem, base] of bases) {
@@ -407,6 +435,7 @@ const discoverDir = (
           globalJsonPaths: folderGlobalJsonPaths,
           metaPaths: base.metaPaths,
         },
+        _code: codeSourcesFor(stem, varName, base, varData),
       });
     }
 
@@ -428,6 +457,7 @@ const discoverDir = (
         globalJsonPaths: folderGlobalJsonPaths,
         metaPaths: base.metaPaths,
       },
+      _code: codeSourcesFor(stem, null, base),
     });
   }
 
@@ -778,7 +808,7 @@ const buildJs = async (
 // ─── Strip internal _* fields before serialising ──────────────────────────────
 
 const stripPrivate = (node) => {
-  const { _render, _scss, _js, ...rest } = node;
+  const { _render, _scss, _js, _code, ...rest } = node;
   if (rest.children) rest.children = rest.children.map(stripPrivate);
   if (rest.variations) rest.variations = rest.variations.map(stripPrivate);
   return rest;
@@ -899,7 +929,100 @@ const renderItem = async (item, componentHeadExtra, bodyById) => {
 const readTemplate = (name) =>
   fs.readFileSync(path.join(templatesRoot, name), "utf8");
 
-const buildIndexHtml = (publicTree, totalCount) => {
+// ─── Component source ("code view") artifacts ──────────────────────────────────
+
+// Map a template engine to a highlight.js language.
+const TEMPLATE_LANG = {
+  twig: "twig",
+  mustache: "handlebars",
+  handlebars: "handlebars",
+  nunjucks: "twig",
+  liquid: "handlebars",
+  html: "xml",
+};
+
+const codeFilesFor = (item) => {
+  const code = item._code;
+  if (!code) return [];
+  const files = [];
+  if (code.template?.path) {
+    files.push({
+      type: "template",
+      lang: TEMPLATE_LANG[code.template.engine] ?? "xml",
+      name: path.basename(code.template.path),
+      content: readText(code.template.path),
+    });
+  }
+  for (const filePath of code.scss)
+    files.push({
+      type: "scss",
+      lang: "scss",
+      name: path.basename(filePath),
+      content: readText(filePath),
+    });
+  for (const filePath of code.js)
+    files.push({
+      type: "js",
+      lang: "javascript",
+      name: path.basename(filePath),
+      content: readText(filePath),
+    });
+  for (const filePath of code.data)
+    files.push({
+      type: "data",
+      lang: "json",
+      name: path.basename(filePath),
+      content: readText(filePath),
+    });
+  return files;
+};
+
+// Write one lazy-loaded source bundle per renderable to dist/code/<id>.json.
+const writeCodeArtifacts = (renderables) => {
+  if (patternlabConfig.ui?.code?.enabled === false) return;
+  for (const item of renderables) {
+    const outPath = path.join(distRoot, "code", ...`${item.id}.json`.split("/"));
+    writeFile(
+      outPath,
+      JSON.stringify({ id: item.id, files: codeFilesFor(item) }, null, 2) + "\n",
+    );
+  }
+};
+
+// Bundle the curated highlighter into an inlinable IIFE (cached per process).
+let highlighterScriptCache;
+const getHighlighterScript = async () => {
+  const code = patternlabConfig.ui?.code;
+  if (!code || code.enabled === false || code.highlight === false) return "";
+  if (highlighterScriptCache !== undefined) return highlighterScriptCache;
+  try {
+    const esbuildModule = await import("esbuild");
+    const esbuild =
+      typeof esbuildModule.build === "function"
+        ? esbuildModule
+        : esbuildModule.default;
+    const result = await esbuild.build({
+      entryPoints: [path.join(templatesRoot, "highlight.entry.mjs")],
+      bundle: true,
+      format: "iife",
+      platform: "browser",
+      minify: true,
+      target: ["es2019"],
+      write: false,
+      logLevel: "silent",
+    });
+    const js = result.outputFiles?.[0]?.text ?? "";
+    highlighterScriptCache = js ? `<script>${js}</script>` : "";
+  } catch (err) {
+    console.warn(
+      `Highlighter bundle failed; code view will be unhighlighted. ${err?.message ?? ""}`.trim(),
+    );
+    highlighterScriptCache = "";
+  }
+  return highlighterScriptCache;
+};
+
+const buildIndexHtml = (publicTree, totalCount, highlighterScript = "") => {
   const safeTree = JSON.stringify(publicTree).replace(/<\//g, "<\\/");
   const safeUiConfig = JSON.stringify(patternlabConfig.ui).replace(
     /<\//g,
@@ -922,8 +1045,9 @@ const buildIndexHtml = (publicTree, totalCount) => {
     )
     .replace(/__TOTAL_COUNT__/g, String(totalCount))
     .replace(/__TOTAL_SUFFIX__/g, totalCount !== 1 ? "s" : "")
-    .replace("__INDEX_CSS__", indexCss)
-    .replace("__INDEX_JS__", indexJs);
+    .replace("__INDEX_CSS__", () => indexCss)
+    .replace("__HIGHLIGHTER__", () => highlighterScript)
+    .replace("__INDEX_JS__", () => indexJs);
 };
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -1034,6 +1158,7 @@ const renderAll = async (tree) => {
 const writeSharedArtifacts = async (tree, renderables) => {
   await hooks.run("beforeWriteArtifacts", { tree, renderables });
   await writeCssJs(tree);
+  writeCodeArtifacts(renderables);
   copyDir(assetsRoot, path.join(distRoot, "assets"));
 
   const publicTree = stripPrivate(tree);
@@ -1053,9 +1178,10 @@ const writeSharedArtifacts = async (tree, renderables) => {
     JSON.stringify(manifest, null, 2) + "\n",
   );
 
+  const highlighterScript = await getHighlighterScript();
   writeFile(
     path.join(distRoot, ...indexOutputFile.split("/")),
-    buildIndexHtml(publicTree, renderables.length),
+    buildIndexHtml(publicTree, renderables.length, highlighterScript),
   );
   await hooks.run("afterWriteArtifacts", { tree, renderables });
 };
@@ -1092,6 +1218,8 @@ const main = async () => {
     fs.mkdirSync(distRoot, { recursive: true });
     const tree = await discover();
     await writeCssJs(tree);
+    // SCSS/JS edits classify as "styles"; refresh the code artifacts too.
+    writeCodeArtifacts(flattenRenderables(tree));
     console.log(`Rebuilt ${cssOutputFile} and ${jsOutputFile} in ${distRoot}`);
     await hooks.run("afterBuild", {
       buildMode,
@@ -1170,12 +1298,13 @@ const main = async () => {
     const componentHeadExtra = readText(
       patternlabConfig.paths.componentHeadPath,
     );
-    for (const item of renderables) {
-      if (!idSet.has(item.id)) continue;
+    const affected = renderables.filter((item) => idSet.has(item.id));
+    for (const item of affected) {
       const html = await renderItem(item, componentHeadExtra);
       const outPath = path.join(distRoot, ...item.outputPath.split("/"));
       writeFile(outPath, html);
     }
+    writeCodeArtifacts(affected);
     console.log(`Re-rendered ${ids.length} component page(s)`);
     await hooks.run("afterBuild", {
       buildMode,
