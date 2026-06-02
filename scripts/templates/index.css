@@ -199,12 +199,8 @@ main {
   gap: 0.5rem;
 }
 .toolbar-row--variants .variant-bar {
-  flex: 1; /* fill the space up to the view toggle */
+  flex: 1; /* the variations strip spans the full width of the row */
   min-width: 0;
-}
-.toolbar-row--variants .view-toggle {
-  margin-left: auto; /* stay pinned right even when there are no variations */
-  flex: 0 0 auto;
 }
 .variant-bar {
   display: none; /* JS switches to flex when there are variations */

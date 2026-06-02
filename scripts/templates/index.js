@@ -363,10 +363,6 @@ const updateVariantSwitcher = (currentId) => {
         "</button>",
     )
     .join("");
-  updateVariantScrollButtons();
-  // Keep the selected tab in view when it sits off-screen in a long list.
-  const active = tabs.querySelector(".variant-tab.active");
-  if (active) active.scrollIntoView({ inline: "nearest", block: "nearest" });
   return true;
 };
 
@@ -378,6 +374,7 @@ const hideAllPanels = () => {
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
+  $("view-toggle").style.display = "none";
   $("variant-row").style.display = "none";
 };
 
@@ -425,10 +422,15 @@ const showComponent = (
   if (updateHistory) setRoute(id, { replace: replaceHistory });
   $("view-toggle").style.display = codeViewEnabled ? "" : "none";
   const hasVariants = updateVariantSwitcher(id);
-  // Row 2 carries the variations and the Preview/Code toggle; show it when
-  // either is present.
-  $("variant-row").style.display =
-    codeViewEnabled || hasVariants ? "flex" : "none";
+  // Row 2 is the full-width variations strip — only shown when variations exist.
+  $("variant-row").style.display = hasVariants ? "flex" : "none";
+  if (hasVariants) {
+    // Measure now that the row is visible (scrollWidth is 0 while display:none),
+    // so the scroll arrows appear on first load without a manual scroll.
+    updateVariantScrollButtons();
+    const active = $("variant-tabs").querySelector(".variant-tab.active");
+    if (active) active.scrollIntoView({ inline: "nearest", block: "nearest" });
+  }
   expandToNode(id);
   refreshActive();
   renderActiveView();
