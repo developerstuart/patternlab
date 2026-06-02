@@ -37,37 +37,47 @@
 
     <main>
       <div class="main-toolbar">
-        <span id="breadcrumb" class="breadcrumb"></span>
+        <div class="toolbar-row">
+          <span id="breadcrumb" class="breadcrumb"></span>
+          <div class="spacer"></div>
+          <div class="toolbar-controls">
+            <div
+              class="seg view-toggle"
+              id="view-toggle"
+              role="group"
+              aria-label="View mode"
+              style="display: none"
+            >
+              <button class="seg-btn active" data-view="preview">Preview</button>
+              <button class="seg-btn" data-view="code">Code</button>
+            </div>
+            <div
+              class="seg viewport-tools"
+              id="viewport-tools"
+              role="group"
+              aria-label="Viewport size"
+              style="display: none"
+            >
+              <button class="seg-btn" data-size="full">Full</button>
+              <button class="seg-btn" data-size="desktop">Desktop</button>
+              <button class="seg-btn" data-size="tablet">Tablet</button>
+              <button class="seg-btn" data-size="mobile">Mobile</button>
+            </div>
+            <button
+              class="icon-btn"
+              id="full-btn"
+              style="display: none"
+              title="Open in new tab"
+            >
+              ↗ Full
+            </button>
+          </div>
+        </div>
         <nav
           id="variant-tabs"
           class="variant-tabs"
           aria-label="Variations"
         ></nav>
-        <div
-          class="view-toggle"
-          id="view-toggle"
-          role="group"
-          aria-label="View mode"
-          style="display: none"
-        >
-          <button class="view-btn active" data-view="preview">Preview</button>
-          <button class="view-btn" data-view="code">Code</button>
-        </div>
-        <div class="spacer"></div>
-        <div class="viewport-tools" id="viewport-tools" style="display: none">
-          <button class="size-btn" data-size="full">Full</button>
-          <button class="size-btn" data-size="desktop">Desktop</button>
-          <button class="size-btn" data-size="tablet">Tablet</button>
-          <button class="size-btn" data-size="mobile">Mobile</button>
-        </div>
-        <button
-          class="icon-btn"
-          id="full-btn"
-          style="display: none"
-          title="Open in new tab"
-        >
-          ↗ Full
-        </button>
       </div>
       <div class="main-content">
         <div id="preview-host" style="display: none">

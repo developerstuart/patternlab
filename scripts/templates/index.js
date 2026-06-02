@@ -418,7 +418,7 @@ const showComponent = (
 // based on the persisted view mode.
 const renderActiveView = () => {
   if (!activeComponent) return;
-  document.querySelectorAll("#view-toggle .view-btn").forEach((b) => {
+  document.querySelectorAll("#view-toggle .seg-btn").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === viewMode);
   });
   if (codeViewEnabled && viewMode === "code") {
@@ -985,7 +985,7 @@ window.addEventListener("message", (e) => {
 
 // Preview / Code view toggle
 $("view-toggle").addEventListener("click", (e) => {
-  const btn = e.target.closest(".view-btn");
+  const btn = e.target.closest(".seg-btn");
   if (!btn || btn.dataset.view === viewMode) return;
   viewMode = btn.dataset.view;
   try {

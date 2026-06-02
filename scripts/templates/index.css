@@ -172,47 +172,68 @@ main {
 }
 .main-toolbar {
   display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+/* Row 1: stable controls — position is unaffected by the variations list */
+.toolbar-row {
+  display: flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.3rem 0.75rem;
-  border-bottom: 1px solid var(--border);
   min-height: 36px;
-  font-size: 0.8rem;
-  flex-wrap: wrap;
+}
+.toolbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .breadcrumb {
   color: var(--text);
   font-weight: 500;
 }
+/* Row 2: variations as a single horizontally scrollable tab strip */
 .variant-tabs {
-  display: none;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 2px;
+  display: none; /* JS switches to flex when there are variations */
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0.25rem;
+  padding: 0 0.75rem;
+  border-top: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.variant-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+.variant-tabs::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 .variant-tab {
   background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.2rem 0.6rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 0.4rem 0.5rem;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-family: var(--font);
+  font-size: 0.78rem;
   line-height: 1.4;
   white-space: nowrap;
   transition:
-    background 0.1s,
     color 0.1s,
     border-color 0.1s;
 }
 .variant-tab:hover {
-  background: var(--surface2);
   color: var(--text);
 }
 .variant-tab.active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-fg);
-  font-weight: 500;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 .main-content {
   flex: 1;
@@ -274,26 +295,36 @@ main {
   height: 14px;
   cursor: nwse-resize;
 }
-.viewport-tools {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-.size-btn {
-  background: none;
+/* Segmented control — shared by the view (Preview/Code) and viewport toggles */
+.seg {
+  display: inline-flex;
+  align-items: stretch;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.2rem 0.5rem;
-  color: var(--text);
+  overflow: hidden;
+}
+.seg-btn {
+  background: var(--surface);
+  border: none;
+  padding: 0.25rem 0.6rem;
+  color: var(--text-muted);
+  font-family: var(--font);
   font-size: 0.75rem;
+  white-space: nowrap;
+  transition:
+    background 0.1s,
+    color 0.1s;
 }
-.size-btn:hover {
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--border);
+}
+.seg-btn:hover {
   background: var(--surface2);
+  color: var(--text);
 }
-.size-btn.active {
+.seg-btn.active {
   background: var(--accent);
   color: var(--accent-fg);
-  border-color: transparent;
 }
 /* ── Folder view ─────────────────────── */
 #folder-view {
@@ -499,32 +530,6 @@ main {
   height: 100%;
   color: var(--text-muted);
   font-size: 0.9rem;
-}
-/* ── Preview / Code view toggle ──────── */
-.view-toggle {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.view-btn {
-  background: none;
-  border: none;
-  padding: 0.2rem 0.6rem;
-  color: var(--text-muted);
-  font-family: var(--font);
-  font-size: 0.75rem;
-}
-.view-btn + .view-btn {
-  border-left: 1px solid var(--border);
-}
-.view-btn:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-.view-btn.active {
-  background: var(--accent);
-  color: var(--accent-fg);
 }
 /* ── Code view ───────────────────────── */
 #code-view {
