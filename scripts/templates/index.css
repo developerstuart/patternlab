@@ -85,6 +85,8 @@ header .version {
 }
 /* ── Sidebar ─────────────────────────── */
 aside {
+  grid-column: 1;
+  grid-row: 2;
   overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -199,6 +201,10 @@ aside {
 }
 /* ── Main ────────────────────────────── */
 main {
+  /* Pin to the content column so hiding the sidebar can't reflow main into
+     the (zero-width) first column. */
+  grid-column: 2;
+  grid-row: 2;
   overflow: hidden;
   display: flex;
   flex-direction: column;
