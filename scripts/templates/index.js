@@ -408,6 +408,44 @@ const expandToNode = (id) => {
   }
 };
 
+/* ── Breadcrumbs ─────────────────────────────────────────── */
+// Walk the parent chain (folder → component → variation) to build the trail.
+const buildBreadcrumbTrail = (id) => {
+  const trail = [];
+  let cur = id;
+  while (cur) {
+    const entry = nodeMap.get(cur);
+    const tree = nodeTreeMap.get(cur);
+    if (!entry) break;
+    trail.unshift({ id: cur, label: entry.node.label });
+    cur = tree ? tree.parentId : null;
+  }
+  return trail;
+};
+
+const renderBreadcrumb = (id) => {
+  const parts = ['<button class="crumb" data-home="1">Home</button>'];
+  const trail = id ? buildBreadcrumbTrail(id) : [];
+  trail.forEach((crumb, i) => {
+    parts.push('<span class="crumb-sep" aria-hidden="true">›</span>');
+    parts.push(
+      '<button class="crumb' +
+        (i === trail.length - 1 ? " current" : "") +
+        '" data-id="' +
+        escHtml(crumb.id) +
+        '">' +
+        escHtml(crumb.label) +
+        "</button>",
+    );
+  });
+  $("breadcrumb").innerHTML = parts.join("");
+};
+
+// On narrow screens, selecting a destination closes the overlay drawer.
+const closeNavOnMobile = () => {
+  if (window.innerWidth <= 768) document.body.classList.add("nav-collapsed");
+};
+
 const showComponent = (
   id,
   outputPath,
@@ -417,8 +455,8 @@ const showComponent = (
   activeId = id;
   activeComponent = { id, outputPath, label };
   hideAllPanels();
-  const family = familyById.get(id);
-  $("breadcrumb").textContent = family?.baseLabel || label;
+  renderBreadcrumb(id);
+  closeNavOnMobile();
   if (updateHistory) setRoute(id, { replace: replaceHistory });
   $("view-toggle").style.display = codeViewEnabled ? "" : "none";
   const hasVariants = updateVariantSwitcher(id);
@@ -456,15 +494,21 @@ const renderActiveView = () => {
   }
   $("code-view").style.display = "none";
   $("preview-host").style.display = "";
-  $("preview-frame").src = "/" + outputPath;
   $("full-btn").style.display = "";
   $("viewport-tools").style.display = UI_CONFIG.showViewportControls
     ? ""
     : "none";
   setViewportPreset(activeViewport === "custom" ? "full" : activeViewport);
-  $("preview-frame").onload = () => {
-    broadcastTogglesToFrame($("preview-frame").contentWindow);
-  };
+  // Only (re)load the iframe when the target actually changes — toggling back
+  // from Code must not force a reload (which causes a flash).
+  const frame = $("preview-frame");
+  const wanted = "/" + outputPath;
+  if (frame.getAttribute("src") !== wanted) {
+    frame.onload = () => broadcastTogglesToFrame(frame.contentWindow);
+    frame.src = wanted;
+  } else {
+    broadcastTogglesToFrame(frame.contentWindow);
+  }
 };
 
 /* ── Code view ───────────────────────────────────────────── */
@@ -671,7 +715,8 @@ const showFolder = (
 ) => {
   activeId = node.id;
   hideAllPanels();
-  $("breadcrumb").textContent = node.label;
+  renderBreadcrumb(node.id);
+  closeNavOnMobile();
   if (updateHistory) setRoute(node.id, { replace: replaceHistory });
   expandToNode(node.id);
 
@@ -796,7 +841,7 @@ const showFolder = (
 const showHome = ({ updateHistory = true, replaceHistory = false } = {}) => {
   activeId = null;
   hideAllPanels();
-  $("breadcrumb").textContent = "";
+  renderBreadcrumb(null);
   if (updateHistory) setRoute(null, { replace: replaceHistory });
 
   const hv = $("home-view");
@@ -1028,6 +1073,29 @@ $("view-toggle").addEventListener("click", (e) => {
     /* ignore storage failures */
   }
   renderActiveView();
+});
+
+// Breadcrumb navigation
+$("breadcrumb").addEventListener("click", (e) => {
+  const crumb = e.target.closest(".crumb");
+  if (!crumb) return;
+  if (crumb.dataset.home) showHome();
+  else if (crumb.dataset.id) showNodeById(crumb.dataset.id);
+});
+
+// Sidebar collapse — default closed on mobile, otherwise remembered.
+const NAV_KEY = "pl-nav";
+const navStored = localStorage.getItem(NAV_KEY);
+if (navStored ? navStored === "collapsed" : window.innerWidth <= 768) {
+  document.body.classList.add("nav-collapsed");
+}
+$("nav-toggle").addEventListener("click", () => {
+  const collapsed = document.body.classList.toggle("nav-collapsed");
+  try {
+    localStorage.setItem(NAV_KEY, collapsed ? "collapsed" : "open");
+  } catch (err) {
+    /* ignore storage failures */
+  }
 });
 
 syncViewToLocation({ replaceHistory: true });
