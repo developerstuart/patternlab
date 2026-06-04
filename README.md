@@ -183,6 +183,7 @@ and `plugins` resolve from the consumer root.
     ],
     "preview": {
       "viewportPresets": { "full": null, "desktop": 1440, "tablet": 768, "mobile": 375 },
+      "zoomLevels": [25, 33, 50, 67, 75, 90, 100], // zoom % steps the preview snaps to when auto-fitting
       "normalHeight": 220,
       "fullWidth": 1440,
       "fullHeight": 900,

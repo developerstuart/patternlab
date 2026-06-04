@@ -151,6 +151,12 @@ const VIEWPORT_WIDTHS = UI_CONFIG.preview?.viewportPresets || {
   tablet: 768,
   mobile: 375,
 };
+const ZOOM_LEVELS = ((UI_CONFIG.preview && UI_CONFIG.preview.zoomLevels) || [
+  25, 33, 50, 67, 75, 90, 100,
+])
+  .map((n) => Number(n) / 100)
+  .filter((n) => n > 0)
+  .sort((a, b) => a - b);
 const nodeMap = new Map();
 const familyById = new Map();
 // nodeId → { li, iconEl, parentId, nodeType }
@@ -187,7 +193,8 @@ collectFamilies(TREE);
 
 /* ── View management ─────────────────────────────────── */
 let activeId = null;
-let activeViewport = "full";
+// Preview viewport state. vw/vh are TRUE viewport px; zoom is a fraction.
+const pv = { mode: "full", vw: 0, vh: 0, zoom: 1 };
 let activeComponent = null; // { id, outputPath, label } for the open component
 const codeViewEnabled = !(UI_CONFIG.code && UI_CONFIG.code.enabled === false);
 let viewMode =
@@ -245,47 +252,102 @@ const refreshActive = () => {
   }
 };
 
-const setViewportPreset = (size) => {
-  activeViewport = VIEWPORT_WIDTHS[size] === undefined ? "full" : size;
-  const shell = $("preview-shell");
+// Available preview area (px) inside #preview-host, minus its padding.
+const paneSize = () => {
   const host = $("preview-host");
-  const maxW = Math.max(280, host.clientWidth - 16);
-  const width = VIEWPORT_WIDTHS[activeViewport];
-  shell.style.width = width == null ? "100%" : Math.min(width, maxW) + "px";
-  shell.style.height = "100%";
-  shell.style.maxWidth = "100%";
-  shell.style.maxHeight = "100%";
-  shell.dataset.size = activeViewport;
-  document.querySelectorAll("[data-size]").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.size === activeViewport);
-  });
+  const cs = getComputedStyle(host);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  return {
+    w: Math.max(80, host.clientWidth - padX),
+    h: Math.max(80, host.clientHeight - padY),
+  };
+};
+
+// Largest configured zoom level that is <= the given fraction.
+const largestZoomLevelAtMost = (frac) => {
+  let best = ZOOM_LEVELS[0];
+  for (const level of ZOOM_LEVELS) if (level <= frac + 1e-6) best = level;
+  return Math.min(best, frac);
+};
+
+// The zoom at which vw×vh fits the pane (capped at 100%).
+const fitZoom = (vw, vh) => {
+  const pane = paneSize();
+  const fit = Math.min(pane.w / vw, vh > 0 ? pane.h / vh : Infinity, 1);
+  return Math.max(fit, 0.01);
+};
+
+const clampZoomToFit = (vw, vh, requested) => {
+  const fit = fitZoom(vw, vh);
+  // Honour a requested zoom that already fits; otherwise snap down to the
+  // largest level that fits ("next appropriate level").
+  return requested <= fit + 1e-6 ? requested : largestZoomLevelAtMost(fit);
+};
+
+// Recompute vw/vh/zoom from pv.mode and render the frame, shell and inputs.
+const applyPreview = () => {
+  const shell = $("preview-shell");
+  const frame = $("preview-frame");
+  const pane = paneSize();
+
+  if (pv.mode === "full") {
+    pv.zoom = 1;
+    pv.vw = Math.round(pane.w);
+    pv.vh = Math.round(pane.h);
+  } else if (pv.mode === "custom") {
+    pv.zoom = clampZoomToFit(pv.vw, pv.vh, pv.zoom);
+  } else {
+    // width-only preset: fixed width, auto-fit zoom, height fills the pane
+    pv.vw = VIEWPORT_WIDTHS[pv.mode] || pane.w;
+    pv.zoom = largestZoomLevelAtMost(Math.min(1, pane.w / pv.vw));
+    pv.vh = Math.round(pane.h / pv.zoom);
+  }
+
+  frame.style.width = pv.vw + "px";
+  frame.style.height = pv.vh + "px";
+  frame.style.transform = "scale(" + pv.zoom + ")";
+  frame.style.transformOrigin = "top left";
+  shell.style.width = Math.round(pv.vw * pv.zoom) + "px";
+  shell.style.height = Math.round(pv.vh * pv.zoom) + "px";
+  shell.dataset.size = pv.mode;
+
+  // Sync inputs (don't clobber the field the user is editing)
+  const wEl = $("vp-w");
+  const hEl = $("vp-h");
+  const zEl = $("vp-zoom");
+  if (document.activeElement !== wEl) wEl.value = pv.vw;
+  if (document.activeElement !== hEl) hEl.value = pv.vh;
+  if (document.activeElement !== zEl) zEl.value = Math.round(pv.zoom * 100);
+
+  document
+    .querySelectorAll("#viewport-tools [data-size]")
+    .forEach((btn) => btn.classList.toggle("active", btn.dataset.size === pv.mode));
+};
+
+const setViewportPreset = (mode) => {
+  pv.mode = VIEWPORT_WIDTHS[mode] === undefined && mode !== "custom" ? "full" : mode;
+  applyPreview();
 };
 
 const setupViewportResizing = () => {
   if (!UI_CONFIG.enableResizeHandles) return;
-
   const shell = $("preview-shell");
-  const host = $("preview-host");
   let drag = null;
 
   const onMove = (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    const maxW = Math.max(280, host.clientWidth - 16);
-    const maxH = Math.max(220, host.clientHeight - 16);
+    // Drag is in screen px; convert to viewport px via the current zoom.
     if (drag.mode === "right" || drag.mode === "corner") {
-      const nextW = Math.min(maxW, Math.max(280, drag.startWidth + dx));
-      shell.style.width = nextW + "px";
+      pv.vw = Math.max(50, Math.round((drag.startWidth + dx) / pv.zoom));
     }
     if (drag.mode === "bottom" || drag.mode === "corner") {
-      const nextH = Math.min(maxH, Math.max(220, drag.startHeight + dy));
-      shell.style.height = nextH + "px";
+      pv.vh = Math.max(50, Math.round((drag.startHeight + dy) / pv.zoom));
     }
-    activeViewport = "custom";
-    document
-      .querySelectorAll("[data-size]")
-      .forEach((btn) => btn.classList.remove("active"));
+    pv.mode = "custom";
+    applyPreview();
   };
 
   const clearDrag = () => {
@@ -302,13 +364,12 @@ const setupViewportResizing = () => {
     window.removeEventListener("blur", clearDrag);
   };
 
-  $("preview-shell").addEventListener("pointerdown", (e) => {
+  shell.addEventListener("pointerdown", (e) => {
     const handleEl = e.target.closest("[data-resize]");
     if (!handleEl) return;
-    const mode = handleEl.getAttribute("data-resize");
     e.preventDefault();
     drag = {
-      mode,
+      mode: handleEl.getAttribute("data-resize"),
       pointerId: e.pointerId,
       handleEl,
       startX: e.clientX,
@@ -324,6 +385,27 @@ const setupViewportResizing = () => {
     window.addEventListener("pointercancel", clearDrag);
     window.addEventListener("blur", clearDrag);
   });
+
+  // Editable width / height / zoom inputs
+  const onSizeInput = () => {
+    const w = parseInt($("vp-w").value, 10);
+    const h = parseInt($("vp-h").value, 10);
+    if (Number.isFinite(w) && w > 0) pv.vw = w;
+    if (Number.isFinite(h) && h > 0) pv.vh = h;
+    pv.mode = "custom";
+    applyPreview();
+  };
+  const onZoomInput = () => {
+    const z = parseInt($("vp-zoom").value, 10);
+    if (Number.isFinite(z) && z > 0) {
+      // Editing zoom keeps the current preset; just (re)clamp to fit.
+      pv.zoom = clampZoomToFit(pv.vw, pv.vh, z / 100);
+      applyPreview();
+    }
+  };
+  $("vp-w").addEventListener("change", onSizeInput);
+  $("vp-h").addEventListener("change", onSizeInput);
+  $("vp-zoom").addEventListener("change", onZoomInput);
 };
 
 const updateVariantScrollButtons = () => {
@@ -374,6 +456,7 @@ const hideAllPanels = () => {
   $("empty-msg").style.display = "none";
   $("full-btn").style.display = "none";
   $("viewport-tools").style.display = "none";
+  $("viewport-size").style.display = "none";
   $("view-toggle").style.display = "none";
   $("variant-row").style.display = "none";
 };
@@ -488,6 +571,7 @@ const renderActiveView = () => {
   if (codeViewEnabled && viewMode === "code") {
     $("preview-host").style.display = "none";
     $("viewport-tools").style.display = "none";
+    $("viewport-size").style.display = "none";
     $("full-btn").style.display = "none";
     renderCodeView(activeComponent.id);
     return;
@@ -495,10 +579,10 @@ const renderActiveView = () => {
   $("code-view").style.display = "none";
   $("preview-host").style.display = "";
   $("full-btn").style.display = "";
-  $("viewport-tools").style.display = UI_CONFIG.showViewportControls
-    ? ""
-    : "none";
-  setViewportPreset(activeViewport === "custom" ? "full" : activeViewport);
+  const showViewport = UI_CONFIG.showViewportControls;
+  $("viewport-tools").style.display = showViewport ? "" : "none";
+  $("viewport-size").style.display = showViewport ? "" : "none";
+  applyPreview();
   // Only (re)load the iframe when the target actually changes — toggling back
   // from Code must not force a reload (which causes a flash).
   const frame = $("preview-frame");
@@ -1004,8 +1088,8 @@ document.querySelectorAll("#viewport-tools [data-size]").forEach((btn) => {
 });
 window.addEventListener("resize", () => {
   if ($("preview-host").style.display === "none") return;
-  if (activeViewport === "custom") return;
-  setViewportPreset(activeViewport);
+  // Re-fit every mode (presets re-fit zoom/fill; custom re-clamps to the pane).
+  applyPreview();
 });
 window.addEventListener("resize", () => {
   refreshVisibleFolderCardScales();

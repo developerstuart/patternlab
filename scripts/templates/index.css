@@ -356,20 +356,17 @@ main {
 }
 #preview-shell {
   position: relative;
+  /* width/height are set by JS to the scaled viewport size */
   width: 100%;
   height: 100%;
-  min-width: 280px;
-  min-height: 220px;
-  max-width: 100%;
-  max-height: 100%;
+  flex: 0 0 auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg);
 }
 #preview-frame {
-  width: 100%;
-  height: 100%;
+  /* width/height (true viewport px) + scale() transform are set by JS */
   border: none;
   display: block;
   background: var(--bg);
@@ -430,6 +427,54 @@ main {
 .seg-btn.active {
   background: var(--accent);
   color: var(--accent-fg);
+}
+/* Editable viewport size / zoom inputs */
+.viewport-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.vp-input {
+  width: 3.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+.vp-input::-webkit-outer-spin-button,
+.vp-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.vp-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.vp-input--zoom {
+  width: 2.8rem;
+  padding-right: 1rem;
+}
+.vp-x {
+  color: var(--text-muted);
+}
+.vp-zoom-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.15rem;
+}
+.vp-pct {
+  position: absolute;
+  right: 0.35rem;
+  pointer-events: none;
+  color: var(--text-muted);
 }
 /* ── Folder view ─────────────────────── */
 #folder-view {

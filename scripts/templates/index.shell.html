@@ -60,6 +60,43 @@
               <button class="seg-btn" data-size="desktop">Desktop</button>
               <button class="seg-btn" data-size="tablet">Tablet</button>
               <button class="seg-btn" data-size="mobile">Mobile</button>
+              <button class="seg-btn" data-size="custom">Custom</button>
+            </div>
+            <div
+              class="viewport-size"
+              id="viewport-size"
+              style="display: none"
+            >
+              <input
+                id="vp-w"
+                class="vp-input"
+                type="number"
+                min="1"
+                step="1"
+                aria-label="Viewport width (px)"
+                title="Viewport width (px)"
+              />
+              <span class="vp-x" aria-hidden="true">×</span>
+              <input
+                id="vp-h"
+                class="vp-input"
+                type="number"
+                min="1"
+                step="1"
+                aria-label="Viewport height (px)"
+                title="Viewport height (px)"
+              />
+              <span class="vp-zoom-wrap">
+                <input
+                  id="vp-zoom"
+                  class="vp-input vp-input--zoom"
+                  type="number"
+                  min="1"
+                  step="1"
+                  aria-label="Zoom (%)"
+                  title="Zoom (%)"
+                /><span class="vp-pct" aria-hidden="true">%</span>
+              </span>
             </div>
             <button
               class="icon-btn"

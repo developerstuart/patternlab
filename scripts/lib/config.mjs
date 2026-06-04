@@ -37,6 +37,7 @@ const DEFAULT_CONFIG = {
         tablet: 768,
         mobile: 375,
       },
+      zoomLevels: [25, 33, 50, 67, 75, 90, 100],
       normalHeight: 220,
       fullWidth: 1440,
       fullHeight: 900,
