@@ -194,7 +194,8 @@ collectFamilies(TREE);
 /* ── View management ─────────────────────────────────── */
 let activeId = null;
 // Preview viewport state. vw/vh are TRUE viewport px; zoom is a fraction.
-const pv = { mode: "full", vw: 0, vh: 0, zoom: 1 };
+// zoomOverride (preset modes only) holds a user-chosen zoom instead of auto-fit.
+const pv = { mode: "full", vw: 0, vh: 0, zoom: 1, zoomOverride: null };
 let activeComponent = null; // { id, outputPath, label } for the open component
 const codeViewEnabled = !(UI_CONFIG.code && UI_CONFIG.code.enabled === false);
 let viewMode =
@@ -285,6 +286,36 @@ const clampZoomToFit = (vw, vh, requested) => {
   return requested <= fit + 1e-6 ? requested : largestZoomLevelAtMost(fit);
 };
 
+// Largest zoom that fits, given the mode (height fills in preset modes, so only
+// width limits there; custom is limited by both dimensions; full is locked).
+const maxZoomForMode = () => {
+  const pane = paneSize();
+  if (pv.mode === "full") return 1;
+  if (pv.mode === "custom") return fitZoom(pv.vw, pv.vh);
+  return Math.min(1, pane.w / pv.vw);
+};
+
+// Populate the zoom <select> with the fixed levels, disabling any that are too
+// large to fit the current viewport, and selecting the applied zoom (which may
+// be an auto-fit value that isn't a round level).
+const syncZoomSelect = () => {
+  const sel = $("vp-zoom");
+  sel.disabled = pv.mode === "full"; // Full is always 100% (fit the pane)
+  if (document.activeElement === sel) return; // don't rebuild while it's open
+  const fitPct = Math.floor(maxZoomForMode() * 100 + 1e-6);
+  const curPct = Math.round(pv.zoom * 100);
+  const pcts = ZOOM_LEVELS.map((z) => Math.round(z * 100));
+  if (!pcts.includes(curPct)) pcts.push(curPct);
+  pcts.sort((a, b) => a - b);
+  sel.innerHTML = pcts
+    .map((p) => {
+      const disabled = p > fitPct && p !== curPct ? " disabled" : "";
+      const selected = p === curPct ? " selected" : "";
+      return `<option value="${p}"${disabled}${selected}>${p}%</option>`;
+    })
+    .join("");
+};
+
 // Recompute vw/vh/zoom from pv.mode and render the frame, shell and inputs.
 const applyPreview = () => {
   const shell = $("preview-shell");
@@ -298,9 +329,14 @@ const applyPreview = () => {
   } else if (pv.mode === "custom") {
     pv.zoom = clampZoomToFit(pv.vw, pv.vh, pv.zoom);
   } else {
-    // width-only preset: fixed width, auto-fit zoom, height fills the pane
+    // width-only preset: fixed width, height fills the pane. Zoom auto-fits
+    // unless the user picked a level (zoomOverride), which is kept on the preset.
     pv.vw = VIEWPORT_WIDTHS[pv.mode] || pane.w;
-    pv.zoom = largestZoomLevelAtMost(Math.min(1, pane.w / pv.vw));
+    const maxZoom = Math.min(1, pane.w / pv.vw);
+    pv.zoom =
+      pv.zoomOverride != null
+        ? Math.min(pv.zoomOverride, maxZoom)
+        : largestZoomLevelAtMost(maxZoom);
     pv.vh = Math.round(pane.h / pv.zoom);
   }
 
@@ -315,10 +351,9 @@ const applyPreview = () => {
   // Sync inputs (don't clobber the field the user is editing)
   const wEl = $("vp-w");
   const hEl = $("vp-h");
-  const zEl = $("vp-zoom");
   if (document.activeElement !== wEl) wEl.value = pv.vw;
   if (document.activeElement !== hEl) hEl.value = pv.vh;
-  if (document.activeElement !== zEl) zEl.value = Math.round(pv.zoom * 100);
+  syncZoomSelect();
 
   document
     .querySelectorAll("#viewport-tools [data-size]")
@@ -327,6 +362,7 @@ const applyPreview = () => {
 
 const setViewportPreset = (mode) => {
   pv.mode = VIEWPORT_WIDTHS[mode] === undefined && mode !== "custom" ? "full" : mode;
+  pv.zoomOverride = null; // a preset click resets to auto-fit
   applyPreview();
 };
 
@@ -347,6 +383,7 @@ const setupViewportResizing = () => {
       pv.vh = Math.max(50, Math.round((drag.startHeight + dy) / pv.zoom));
     }
     pv.mode = "custom";
+    pv.zoomOverride = null;
     applyPreview();
   };
 
@@ -393,15 +430,20 @@ const setupViewportResizing = () => {
     if (Number.isFinite(w) && w > 0) pv.vw = w;
     if (Number.isFinite(h) && h > 0) pv.vh = h;
     pv.mode = "custom";
+    pv.zoomOverride = null;
     applyPreview();
   };
   const onZoomInput = () => {
     const z = parseInt($("vp-zoom").value, 10);
-    if (Number.isFinite(z) && z > 0) {
-      // Editing zoom keeps the current preset; just (re)clamp to fit.
+    if (!Number.isFinite(z) || z <= 0) return;
+    // Changing zoom is a view control: it keeps a preset selected (stored as an
+    // override) rather than switching to Custom. In Custom it sets zoom directly.
+    if (pv.mode === "custom") {
       pv.zoom = clampZoomToFit(pv.vw, pv.vh, z / 100);
-      applyPreview();
+    } else {
+      pv.zoomOverride = z / 100;
     }
+    applyPreview();
   };
   $("vp-w").addEventListener("change", onSizeInput);
   $("vp-h").addEventListener("change", onSizeInput);

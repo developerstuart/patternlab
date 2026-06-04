@@ -86,17 +86,12 @@
                 aria-label="Viewport height (px)"
                 title="Viewport height (px)"
               />
-              <span class="vp-zoom-wrap">
-                <input
-                  id="vp-zoom"
-                  class="vp-input vp-input--zoom"
-                  type="number"
-                  min="1"
-                  step="1"
-                  aria-label="Zoom (%)"
-                  title="Zoom (%)"
-                /><span class="vp-pct" aria-hidden="true">%</span>
-              </span>
+              <select
+                id="vp-zoom"
+                class="vp-select"
+                aria-label="Zoom level"
+                title="Zoom level (levels too large to fit are disabled)"
+              ></select>
             </div>
             <button
               class="icon-btn"

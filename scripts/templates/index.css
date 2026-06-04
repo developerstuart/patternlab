@@ -457,24 +457,22 @@ main {
   outline: none;
   border-color: var(--accent);
 }
-.vp-input--zoom {
-  width: 2.8rem;
-  padding-right: 1rem;
-}
 .vp-x {
   color: var(--text-muted);
 }
-.vp-zoom-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
+.vp-select {
   margin-left: 0.15rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.3rem;
 }
-.vp-pct {
-  position: absolute;
-  right: 0.35rem;
-  pointer-events: none;
-  color: var(--text-muted);
+.vp-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 /* ── Folder view ─────────────────────── */
 #folder-view {
