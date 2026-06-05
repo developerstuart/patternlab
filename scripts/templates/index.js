@@ -153,7 +153,60 @@ const escHtml = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 const $ = (id) => document.getElementById(id);
+
+/* ── Popovers ─────────────────────────────────────────── */
+const closeAllPopovers = (except) => {
+  document.querySelectorAll(".popover-panel.open, .viewport-panel.open").forEach(
+    (panel) => {
+      if (panel === except) return;
+      panel.classList.remove("open");
+      const wrap = panel.closest(".popover");
+      const trigger = wrap && wrap.querySelector("[aria-haspopup]");
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    },
+  );
+};
+const setupPopover = (trigger, panel) => {
+  if (!trigger || !panel) return;
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const willOpen = !panel.classList.contains("open");
+    closeAllPopovers();
+    panel.classList.toggle("open", willOpen);
+    trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  });
+};
+document.addEventListener("click", (e) => {
+  if (!e.target.closest(".popover")) closeAllPopovers();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeAllPopovers();
+});
+
+/* ── Header toggles: auto-overflow into the Display popover ─────────── */
+let toggleNodes = [];
+const reflowHeaderToggles = () => {
+  const inlineHost = $("pl-toggles");
+  const menu = $("display-menu");
+  const panel = $("display-panel");
+  if (!inlineHost || !menu || !panel) return;
+  const header = document.querySelector("header");
+  // Reset: everything inline, popover hidden.
+  toggleNodes.forEach((n) => inlineHost.appendChild(n));
+  menu.style.display = "none";
+  if (header.scrollWidth <= header.clientWidth + 1) return; // they all fit
+  // Overflowing: reveal the Display menu and push toggles into it from the end
+  // until the header fits.
+  menu.style.display = "";
+  for (let i = toggleNodes.length - 1; i >= 0; i--) {
+    if (header.scrollWidth <= header.clientWidth + 1) break;
+    panel.insertBefore(toggleNodes[i], panel.firstChild);
+  }
+};
+
 setupToggles();
+toggleNodes = [...$("pl-toggles").children];
+
 const VIEWPORT_WIDTHS = UI_CONFIG.preview?.viewportPresets || {
   full: null,
   desktop: 1440,
@@ -367,6 +420,16 @@ const applyPreview = () => {
   document
     .querySelectorAll("#viewport-tools [data-size]")
     .forEach((btn) => btn.classList.toggle("active", btn.dataset.size === pv.mode));
+  const presetSel = $("vp-preset");
+  if (presetSel && document.activeElement !== presetSel) presetSel.value = pv.mode;
+  // Compact trigger label: preset name, or W×H for custom.
+  const trigLabel = $("viewport-trigger-label");
+  if (trigLabel) {
+    trigLabel.textContent =
+      pv.mode === "custom"
+        ? pv.vw + "×" + pv.vh
+        : pv.mode.charAt(0).toUpperCase() + pv.mode.slice(1);
+  }
 };
 
 const setViewportPreset = (mode) => {
@@ -457,6 +520,10 @@ const setupViewportResizing = () => {
   $("vp-w").addEventListener("change", onSizeInput);
   $("vp-h").addEventListener("change", onSizeInput);
   $("vp-zoom").addEventListener("change", onZoomInput);
+  // Preset dropdown (used in the compact popover) mirrors the preset buttons.
+  const presetSel = $("vp-preset");
+  if (presetSel)
+    presetSel.addEventListener("change", () => setViewportPreset(presetSel.value));
 };
 
 const updateVariantScrollButtons = () => {
@@ -505,9 +572,7 @@ const hideAllPanels = () => {
   $("home-view").style.display = "none";
   $("code-view").style.display = "none";
   $("empty-msg").style.display = "none";
-  $("full-btn").style.display = "none";
-  $("viewport-tools").style.display = "none";
-  $("viewport-size").style.display = "none";
+  $("viewport-group").style.display = "none";
   $("view-toggle").style.display = "none";
   $("variant-row").style.display = "none";
 };
@@ -618,21 +683,19 @@ const renderActiveView = () => {
   const outputPath = activeComponent.outputPath;
   $("full-btn").onclick = () => window.open("/" + outputPath, "_blank");
 
-  // Size controls and the Full button are preview tools — hidden in code mode.
+  // The viewport controls are preview tools — the whole group hides in code mode.
   if (codeViewEnabled && viewMode === "code") {
     $("preview-host").style.display = "none";
-    $("viewport-tools").style.display = "none";
-    $("viewport-size").style.display = "none";
-    $("full-btn").style.display = "none";
+    $("viewport-group").style.display = "none";
+    closeAllPopovers();
     renderCodeView(activeComponent.id);
     return;
   }
   $("code-view").style.display = "none";
   $("preview-host").style.display = "";
-  $("full-btn").style.display = "";
-  const showViewport = UI_CONFIG.showViewportControls;
-  $("viewport-tools").style.display = showViewport ? "" : "none";
-  $("viewport-size").style.display = showViewport ? "" : "none";
+  $("viewport-group").style.display = UI_CONFIG.showViewportControls
+    ? ""
+    : "none";
   applyPreview();
   // Only (re)load the iframe when the target actually changes — toggling back
   // from Code must not force a reload (which causes a flash).
@@ -1126,6 +1189,14 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
 
 buildTree(TREE.children || [], $("tree-root"), 0, null);
 setupViewportResizing();
+setupPopover($("viewport-trigger"), $("viewport-panel"));
+setupPopover($("display-toggle"), $("display-panel"));
+// Re-home overflowing header toggles whenever the header width changes.
+reflowHeaderToggles();
+if (typeof ResizeObserver !== "undefined") {
+  const headerEl = document.querySelector("header");
+  if (headerEl) new ResizeObserver(reflowHeaderToggles).observe(headerEl);
+}
 if (!UI_CONFIG.enableResizeHandles) {
   document.querySelectorAll(".resize-handle").forEach((el) => {
     el.style.display = "none";

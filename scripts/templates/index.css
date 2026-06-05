@@ -479,6 +479,44 @@ main {
   outline: none;
   border-color: var(--accent);
 }
+/* ── Popovers (Display menu + compact viewport panel) ─────── */
+.popover {
+  position: relative;
+  display: inline-flex;
+}
+.popover-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.popover-panel.open {
+  display: flex;
+}
+/* ── Viewport controls group ──────────────────────────────── */
+.viewport-group {
+  align-items: center;
+}
+.viewport-trigger {
+  display: none; /* shown only on compact screens */
+}
+.viewport-panel {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.vp-preset {
+  display: none; /* the seg buttons are used on wide screens */
+}
 /* ── Folder view ─────────────────────── */
 #folder-view {
   padding: 1rem;
@@ -838,11 +876,67 @@ main {
     display: none;
   }
 }
-@media (max-width: 640px) {
-  /* Hide the width/height/zoom inputs; the preset buttons still size the
-     preview. (Overrides the inline display JS sets when showing a component.) */
-  #viewport-size {
-    display: none !important;
+/* Compact: collapse the viewport controls into a popover, keep row 1 on one
+   line so switching Preview/Code never reflows the toggle. */
+@media (max-width: 820px) {
+  .toolbar-row {
+    flex-wrap: nowrap;
+    /* Fixed height so hiding the viewport trigger in code mode can't shift the
+       view toggle vertically. */
+    min-height: 42px;
+  }
+  .toolbar-controls {
+    flex-wrap: nowrap;
+  }
+  .breadcrumb {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .breadcrumb .crumb {
+    white-space: nowrap;
+  }
+  .viewport-trigger {
+    display: inline-flex;
+  }
+  .viewport-panel {
+    /* becomes the popover content */
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 40;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  }
+  .viewport-panel.open {
+    display: flex;
+  }
+  #viewport-tools {
+    display: none; /* use the compact preset dropdown instead */
+  }
+  .vp-preset {
+    display: inline-block;
+  }
+  .viewport-size {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 900px) {
+  .count {
+    display: none;
+  }
+}
+@media (max-width: 768px) {
+  header .version {
+    display: none;
   }
   .seg-btn {
     padding: 0.25rem 0.45rem;
@@ -851,7 +945,7 @@ main {
 @media (max-width: 520px) {
   /* Icon-only action buttons + drop the "Theme" label to save header space */
   #mode-btn .btn-label,
-  #full-btn .btn-label {
+  #display-toggle .btn-label {
     display: none;
   }
   .pl-toggle-label {
@@ -863,5 +957,10 @@ main {
   }
   .toolbar-row {
     padding: 0.3rem 0.5rem;
+  }
+  /* Show only the current crumb on small screens (full trail via the menu) */
+  .breadcrumb .crumb:not(.current),
+  .breadcrumb .crumb-sep {
+    display: none;
   }
 }
