@@ -41,7 +41,9 @@ const broadcastTogglesToFrame = (frameWindow) => {
     const firstVal =
       Array.isArray(def.values) && def.values.length
         ? normToggleVal(def.values[0]).value
-        : "";
+        : def.type === "boolean"
+          ? "false"
+          : "";
     const value = localStorage.getItem(storageKey) || def.default || firstVal;
     try {
       frameWindow.postMessage(
@@ -57,15 +59,18 @@ const setupToggles = () => {
   if (!container) return;
   const toggleDefs = UI_CONFIG.toggles || [];
   toggleDefs.forEach((def) => {
-    if (
-      !def.id ||
-      !def.attribute ||
-      !Array.isArray(def.values) ||
-      def.values.length === 0
-    )
-      return;
+    if (!def.id || !def.attribute) return;
+    const isBoolean = def.type === "boolean";
+    const hasValues = Array.isArray(def.values) && def.values.length > 0;
+    // Select toggles need explicit values; boolean toggles default to off/on.
+    if (!isBoolean && !hasValues) return;
     const storageKey = def.storageKey || `pl-toggle-${def.id}`;
-    const entries = def.values.map(normToggleVal);
+    const entries = hasValues
+      ? def.values.map(normToggleVal)
+      : [
+          { value: "false", label: "Off" },
+          { value: "true", label: "On" },
+        ];
     const defaultValue = def.default || entries[0].value;
     const savedValue = localStorage.getItem(storageKey) || defaultValue;
     const targetEl = () =>
