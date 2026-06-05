@@ -33,6 +33,14 @@
           }
         ],
         "default": "default"
+      },
+      {
+        "id": "happy",
+        "type": "boolean",
+        "label": "Happy",
+        "attribute": "data-happy",
+        "target": "html",
+        "storageKey": "pl-happy"
       }
     ],
     "showViewportControls": true,
