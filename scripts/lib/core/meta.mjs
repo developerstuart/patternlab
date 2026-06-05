@@ -47,7 +47,7 @@ export const readFolderMeta = (dirPath) => {
 export const toLabel = (stem) =>
   stem.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-export const normalizeCardDisplay = (value) => {
+export const normalizeTemplateDisplay = (value) => {
   if (typeof value !== 'string') return null;
   const normalized = value.trim().toLowerCase();
   return normalized === 'normal' || normalized === 'full' ? normalized : null;

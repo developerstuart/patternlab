@@ -245,16 +245,17 @@ const nodeTreeMap = new Map();
 const collectFamilies = (node) => {
   if (node.type === "component") {
     const hasVariations = (node.variations || []).length > 0;
-    // With variations the component's own page aggregates them all ("All");
-    // without variations it is just the single component page.
-    const options = [
-      {
-        id: node.id,
-        label: hasVariations ? "All" : node.label,
-        outputPath: node.outputPath,
-      },
-    ].concat(
-      (node.variations || []).map((v) => ({
+    const isFullDisplay = node.templateDisplay === "full";
+    // template_display:full skips the "All" aggregate page; variations are
+    // navigated directly. Otherwise the component's own page is the "All" view.
+    const options = [];
+    if (hasVariations && !isFullDisplay) {
+      options.push({ id: node.id, label: "All", outputPath: node.outputPath });
+    } else if (!hasVariations) {
+      options.push({ id: node.id, label: node.label, outputPath: node.outputPath });
+    }
+    options.push(
+      ...(node.variations || []).map((v) => ({
         id: v.id,
         label: v.label,
         outputPath: v.outputPath,
@@ -266,6 +267,15 @@ const collectFamilies = (node) => {
         options,
         baseLabel: node.label,
       });
+    // For full-display, also map the component's own ID so URL routing can
+    // resolve it even though it isn't in the options list.
+    if (isFullDisplay && hasVariations) {
+      familyById.set(node.id, {
+        baseId: node.id,
+        options,
+        baseLabel: node.label,
+      });
+    }
   }
   for (const child of node.children || []) collectFamilies(child);
 };
@@ -306,6 +316,13 @@ const showNodeById = (id, options = {}) => {
   const { node } = entry;
   if (node.type === "folder") {
     showFolder(node, options);
+    return;
+  }
+
+  // template_display:full components have no "All" page; open the default variation.
+  if (node.type === "component" && node.templateDisplay === "full" && node.variations?.length > 0) {
+    const first = node.variations[0];
+    showComponent(first.id, first.outputPath, node.label, options);
     return;
   }
 
@@ -891,7 +908,7 @@ const PREVIEW_FULL_H = UI_CONFIG.preview?.fullHeight ?? 900;
 const PREVIEW_FULL_MIN_H = UI_CONFIG.preview?.fullMinHeight ?? 140;
 const PREVIEW_FULL_MAX_H = UI_CONFIG.preview?.fullMaxHeight ?? 280;
 
-const normalizeCardDisplay = (value) => (value === "full" ? "full" : "normal");
+const normalizeTemplateDisplay = (value) => (value === "full" ? "full" : "normal");
 
 const applyFullPreviewScale = (iframe) => {
   const preview = iframe.closest(".ccard-preview");
@@ -913,7 +930,7 @@ const applyFullPreviewScale = (iframe) => {
 };
 
 const initPreviewIframe = (iframe) => {
-  const displayMode = normalizeCardDisplay(iframe.dataset.cardDisplay);
+  const displayMode = normalizeTemplateDisplay(iframe.dataset.templateDisplay);
   const preview = iframe.closest(".ccard-preview");
   iframe.style.border = "none";
   iframe.style.display = "block";
@@ -941,7 +958,7 @@ const initPreviewIframe = (iframe) => {
 const refreshVisibleFolderCardScales = () => {
   document
     .querySelectorAll(
-      '#folder-view .ccard-preview iframe[data-card-display="full"]',
+      '#folder-view .ccard-preview iframe[data-template-display="full"]',
     )
     .forEach(applyFullPreviewScale);
 };
@@ -1028,9 +1045,15 @@ const showFolder = (
               .join("") +
             "</div>"
           : "";
-        const cardDisplay = normalizeCardDisplay(child.cardDisplay);
-        // Preview the Default variation in the card so it stays compact; the
-        // Open button / preview click still navigate to the component's "All" page.
+        const templateDisplay = normalizeTemplateDisplay(child.templateDisplay);
+        const isFullDisplay = templateDisplay === "full" && hasVars;
+        // For template_display:full, Open/click goes directly to the default
+        // variation (no "All" page). Otherwise it opens the component's All page.
+        const openId = isFullDisplay ? child.variations[0].id : child.id;
+        const openPath = isFullDisplay
+          ? child.variations[0].outputPath
+          : child.outputPath;
+        // Preview always uses the first (default) variation when variations exist.
         const previewPath = hasVars
           ? child.variations[0].outputPath
           : child.outputPath;
@@ -1040,23 +1063,23 @@ const showFolder = (
           escHtml(child.label) +
           "</span>" +
           '<button class="open-btn" data-act="comp" data-id="' +
-          escHtml(child.id) +
+          escHtml(openId) +
           '" data-path="' +
-          escHtml(child.outputPath) +
+          escHtml(openPath) +
           '" data-label="' +
           escHtml(child.label) +
           '">Open</button></div>' +
           varHtml +
           '<div class="ccard-preview ccard-preview--' +
-          escHtml(cardDisplay) +
+          escHtml(templateDisplay) +
           '" data-act="comp" data-id="' +
-          escHtml(child.id) +
+          escHtml(openId) +
           '" data-path="' +
-          escHtml(child.outputPath) +
+          escHtml(openPath) +
           '" data-label="' +
           escHtml(child.label) +
-          '"><iframe data-card-display="' +
-          escHtml(cardDisplay) +
+          '"><iframe data-template-display="' +
+          escHtml(templateDisplay) +
           '" src="/' +
           escHtml(previewPath) +
           '" loading="lazy" title="' +
@@ -1209,12 +1232,18 @@ const buildTree = (nodes, ulEl, depth, parentId) => {
           showFolder(node);
         });
       } else {
-        // Component with variations: toggle + show component
+        // Component with variations: toggle + show component (or default variation
+        // for template_display:full, which has no "All" page).
         btn.addEventListener("click", (e) => {
           e.stopPropagation();
           const open = li.classList.toggle("open");
           icon.textContent = open ? "▼" : "▶";
-          showComponent(node.id, node.outputPath, node.label);
+          if (node.templateDisplay === "full" && node.variations?.length > 0) {
+            const first = node.variations[0];
+            showComponent(first.id, first.outputPath, node.label);
+          } else {
+            showComponent(node.id, node.outputPath, node.label);
+          }
         });
       }
     } else {

@@ -13,7 +13,7 @@ import {
 } from "./lib/core/fs.mjs";
 import { toPosix, toPublicAssetPath } from "./lib/core/path.mjs";
 import {
-  normalizeCardDisplay as normalizeCardDisplayMeta,
+  normalizeTemplateDisplay as normalizeTemplateDisplayMeta,
   readFolderMeta as readFolderMetaShared,
   readMeta as readMetaShared,
   toLabel as toLabelShared,
@@ -242,13 +242,13 @@ window.addEventListener('message', function(e) {
  *   - children: sub-folder nodes + component nodes
  *   - _scss / _js: style and script files to bundle
  */
-const normalizeCardDisplay = normalizeCardDisplayMeta;
+const normalizeTemplateDisplay = normalizeTemplateDisplayMeta;
 
 const discoverDir = (
   dir,
   relPath,
   parentGlobal,
-  parentCardDisplay = "normal",
+  parentTemplateDisplay = "normal",
   inheritedGlobalJsonPaths = [],
   inheritedMetaPaths = [],
 ) => {
@@ -259,12 +259,12 @@ const discoverDir = (
     ? [...inheritedMetaPaths, folderMetaPath]
     : inheritedMetaPaths;
   const folderMeta = readFolderMeta(dir);
-  const folderCardDisplay = normalizeCardDisplay(
-    folderMeta.card_display ??
-      folderMeta.cardDisplay ??
-      folderMeta["card-display"],
+  const folderTemplateDisplay = normalizeTemplateDisplay(
+    folderMeta.template_display ??
+      folderMeta.templateDisplay ??
+      folderMeta["template-display"],
   );
-  const effectiveFolderCardDisplay = folderCardDisplay ?? parentCardDisplay;
+  const effectiveFolderTemplateDisplay = folderTemplateDisplay ?? parentTemplateDisplay;
   const localGlobalJsonPath = path.join(dir, "_global.json");
   const hasLocalGlobalJson = fs.existsSync(localGlobalJsonPath);
   const folderGlobal = mergeDeep(
@@ -409,12 +409,12 @@ const discoverDir = (
     const outBase = toPosix(
       path.join(componentsOutputDir, relPath || "", stem),
     );
-    const componentCardDisplay =
-      normalizeCardDisplay(
-        base.meta.card_display ??
-          base.meta.cardDisplay ??
-          base.meta["card-display"],
-      ) ?? effectiveFolderCardDisplay;
+    const componentTemplateDisplay =
+      normalizeTemplateDisplay(
+        base.meta.template_display ??
+          base.meta.templateDisplay ??
+          base.meta["template-display"],
+      ) ?? effectiveFolderTemplateDisplay;
 
     // The default variation's label/order can be overridden from the
     // component's own .md (e.g. default_label: Primary), so the component stays
@@ -424,11 +424,13 @@ const discoverDir = (
       base.meta.defaultLabel ??
       base.meta["default-label"] ??
       "Default";
+    // Default to order 0 so the default variation always sorts before unordered
+    // variations (which get 1), unless explicitly overridden in metadata.
     const defaultOrder =
       base.meta.default_order ??
       base.meta.defaultOrder ??
       base.meta["default-order"] ??
-      1;
+      0;
 
     const varNodes = [];
     for (const [varName, varData] of base.variations) {
@@ -447,7 +449,7 @@ const discoverDir = (
         id: varId,
         label: varMeta.title ?? (isDefault ? defaultLabel : toLabel(varName)),
         order: varMeta.order ?? (isDefault ? defaultOrder : 1),
-        cardDisplay: componentCardDisplay,
+        templateDisplay: componentTemplateDisplay,
         outputPath: varOut,
         _render: {
           templatePath: varData.templatePath,
@@ -473,7 +475,7 @@ const discoverDir = (
       label: base.meta.title ?? toLabel(stem),
       order: base.meta.order ?? 1,
       hidden: false,
-      cardDisplay: componentCardDisplay,
+      templateDisplay: componentTemplateDisplay,
       outputPath: `${outBase}.html`,
       variations: varNodes,
       _render: {
@@ -497,7 +499,7 @@ const discoverDir = (
       fullPath,
       childRel,
       folderGlobal,
-      effectiveFolderCardDisplay,
+      effectiveFolderTemplateDisplay,
       folderGlobalJsonPaths,
       folderMetaPaths,
     );
@@ -519,7 +521,7 @@ const discoverDir = (
     label: folderMeta.title ?? toLabel(path.basename(dir)),
     order: folderMeta.order ?? 1,
     hidden: folderMeta.hidden ?? false,
-    cardDisplay: effectiveFolderCardDisplay,
+    templateDisplay: effectiveFolderTemplateDisplay,
     folderPath: relPath || "",
     children,
     _scss: scssFiles,
@@ -842,9 +844,12 @@ const stripPrivate = (node) => {
 
 // ─── Render a single component or variation ────────────────────────────────────
 
-// A component node with variations renders an aggregate "All" page.
+// A component node with variations renders an aggregate "All" page, unless
+// template_display is "full" — those show the default variation directly.
 const isAllPage = (item) =>
-  item.type === "component" && (item.variations?.length ?? 0) > 0;
+  item.type === "component" &&
+  (item.variations?.length ?? 0) > 0 &&
+  item.templateDisplay !== "full";
 
 // Source files an item's rendered output depends on. An "All" page depends on
 // every variation it aggregates, so collect their specs rather than the base.
@@ -917,12 +922,12 @@ const renderAllPage = async (componentNode, head, bodyById) => {
       : await renderBody(variation._render);
     sections.push(allPageSection(variation, body));
   }
-  const cardDisplay =
-    normalizeCardDisplay(componentNode.cardDisplay) ?? "normal";
+  const templateDisplay =
+    normalizeTemplateDisplay(componentNode.templateDisplay) ?? "normal";
   return wrapComponent(
     `${sections.join("\n")}\n${ALL_PAGE_NAV_SCRIPT}`,
     `${ALL_PAGE_STYLE}\n${head ?? ""}`,
-    `pl-card-${cardDisplay} pl-all`,
+    `pl-template-${templateDisplay} pl-all`,
   );
 };
 
@@ -939,9 +944,9 @@ const renderItem = async (item, componentHeadExtra, bodyById) => {
   } else {
     const body = await renderBody(renderItemInput._render);
     bodyById?.set(renderItemInput.id, body);
-    const cardDisplay =
-      normalizeCardDisplay(renderItemInput.cardDisplay) ?? "normal";
-    wrapped = wrapComponent(body, headInput, `pl-card-${cardDisplay}`);
+    const templateDisplay =
+      normalizeTemplateDisplay(renderItemInput.templateDisplay) ?? "normal";
+    wrapped = wrapComponent(body, headInput, `pl-template-${templateDisplay}`);
   }
   const afterPayload = await hooks.run("afterRenderItem", {
     item: renderItemInput,
