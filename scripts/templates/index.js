@@ -7,7 +7,11 @@ const applyMode = (mode) => {
   document.documentElement.setAttribute("data-mode", mode);
   localStorage.setItem("pl-mode", mode);
   const modeBtn = document.getElementById("mode-btn");
-  if (modeBtn) modeBtn.textContent = mode === "dark" ? "☀ Light" : "🌙 Dark";
+  if (modeBtn)
+    modeBtn.innerHTML =
+      mode === "dark"
+        ? '☀ <span class="btn-label">Light</span>'
+        : '🌙 <span class="btn-label">Dark</span>';
   document.querySelectorAll("iframe").forEach((f) => {
     try {
       f.contentWindow.postMessage({ type: "pl-mode", mode }, "*");
