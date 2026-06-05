@@ -58,7 +58,22 @@
     <main>
       <div class="main-toolbar">
         <div class="toolbar-row">
-          <span id="breadcrumb" class="breadcrumb"></span>
+          <div class="breadcrumb-wrap">
+            <span id="breadcrumb" class="breadcrumb"></span>
+            <div class="popover breadcrumb-menu" id="breadcrumb-menu">
+              <button
+                class="breadcrumb-trigger"
+                id="breadcrumb-trigger"
+                aria-haspopup="true"
+                aria-expanded="false"
+                title="Breadcrumb"
+              >
+                <span id="breadcrumb-current">Home</span>
+                <span class="vp-caret" aria-hidden="true">▾</span>
+              </button>
+              <div class="popover-panel" id="breadcrumb-panel"></div>
+            </div>
+          </div>
           <div class="spacer"></div>
           <div class="toolbar-controls">
             <div class="viewport-group popover" id="viewport-group" style="display: none">

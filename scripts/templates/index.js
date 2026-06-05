@@ -623,8 +623,9 @@ const buildBreadcrumbTrail = (id) => {
 };
 
 const renderBreadcrumb = (id) => {
-  const parts = ['<button class="crumb" data-home="1">Home</button>'];
   const trail = id ? buildBreadcrumbTrail(id) : [];
+  // Inline trail (shown on wide panes)
+  const parts = ['<button class="crumb" data-home="1">Home</button>'];
   trail.forEach((crumb, i) => {
     parts.push('<span class="crumb-sep" aria-hidden="true">›</span>');
     parts.push(
@@ -638,6 +639,25 @@ const renderBreadcrumb = (id) => {
     );
   });
   $("breadcrumb").innerHTML = parts.join("");
+
+  // Dropdown version (shown on narrow panes): the current page is the trigger
+  // label; ancestors live in the popover so they stay reachable.
+  const all = [{ home: true, label: "Home" }].concat(trail);
+  const current = all[all.length - 1];
+  const ancestors = all.slice(0, -1);
+  $("breadcrumb-current").textContent = current.label;
+  $("breadcrumb-panel").innerHTML = ancestors
+    .map((c) =>
+      c.home
+        ? '<button class="crumb" data-home="1">Home</button>'
+        : '<button class="crumb" data-id="' +
+          escHtml(c.id) +
+          '">' +
+          escHtml(c.label) +
+          "</button>",
+    )
+    .join("");
+  $("breadcrumb-menu").classList.toggle("no-ancestors", ancestors.length === 0);
 };
 
 // On narrow screens, selecting a destination closes the overlay drawer.
@@ -1281,13 +1301,17 @@ $("view-toggle").addEventListener("click", (e) => {
   renderActiveView();
 });
 
-// Breadcrumb navigation
-$("breadcrumb").addEventListener("click", (e) => {
+// Breadcrumb navigation (inline trail + the compact dropdown panel)
+const onCrumbClick = (e) => {
   const crumb = e.target.closest(".crumb");
   if (!crumb) return;
+  closeAllPopovers();
   if (crumb.dataset.home) showHome();
   else if (crumb.dataset.id) showNodeById(crumb.dataset.id);
-});
+};
+$("breadcrumb").addEventListener("click", onCrumbClick);
+$("breadcrumb-panel").addEventListener("click", onCrumbClick);
+setupPopover($("breadcrumb-trigger"), $("breadcrumb-panel"));
 
 // Sidebar collapse — default closed on mobile, otherwise remembered.
 const NAV_KEY = "pl-nav";

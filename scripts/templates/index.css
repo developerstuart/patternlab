@@ -238,6 +238,14 @@ main {
   flex-shrink: 0;
   gap: 0.4rem;
 }
+.breadcrumb-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  /* No overflow:hidden here — it would clip the dropdown popover. The inline
+     #breadcrumb clips its own content for truncation. */
+}
 .breadcrumb {
   display: flex;
   align-items: center;
@@ -248,6 +256,47 @@ main {
 }
 .breadcrumb .crumb {
   white-space: nowrap;
+}
+/* Compact breadcrumb dropdown: current page is the trigger, ancestors inside */
+.breadcrumb-menu {
+  min-width: 0;
+}
+/* Higher specificity than `.popover { display: inline-flex }` so it stays
+   hidden until the compact container query re-shows it. */
+.popover.breadcrumb-menu {
+  display: none;
+}
+.breadcrumb-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+#breadcrumb-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#breadcrumb-panel {
+  right: auto;
+  left: 0;
+}
+#breadcrumb-panel .crumb {
+  text-align: left;
+  padding: 0.15rem 0.25rem;
+}
+.breadcrumb-menu.no-ancestors .vp-caret {
+  display: none;
+}
+.breadcrumb-menu.no-ancestors .breadcrumb-trigger {
+  pointer-events: none;
 }
 .crumb {
   background: none;
@@ -959,10 +1008,13 @@ main {
     justify-content: flex-start;
   }
 }
-/* Very narrow pane: show only the current breadcrumb (full trail via the menu) */
-@container pane (max-width: 420px) {
-  .breadcrumb .crumb:not(.current),
-  .breadcrumb .crumb-sep {
+/* Narrow pane: collapse the breadcrumb into a dropdown so the current page name
+   is always visible and the ancestors stay reachable in the menu. */
+@container pane (max-width: 620px) {
+  .breadcrumb {
     display: none;
+  }
+  .popover.breadcrumb-menu {
+    display: inline-flex;
   }
 }
