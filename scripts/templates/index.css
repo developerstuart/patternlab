@@ -210,6 +210,9 @@ main {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* Query container so the toolbar responds to the PANE width (which excludes
+     the sidebar), not the viewport width. */
+  container: pane / inline-size;
 }
 .main-toolbar {
   display: flex;
@@ -217,27 +220,34 @@ main {
   border-bottom: 1px solid var(--border);
   font-size: 0.8rem;
 }
-/* Row 1: stable controls — position is unaffected by the variations list */
+/* Row 1: always a single line, fixed height — the view toggle never moves when
+   the (preview-only) viewport controls show/hide. The breadcrumb is the
+   flexible item that shrinks/truncates. */
 .toolbar-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap; /* controls drop to a new line rather than clipping */
-  gap: 0.4rem 0.5rem;
+  flex-wrap: nowrap;
+  gap: 0.5rem;
   padding: 0.3rem 0.75rem;
-  min-height: 36px;
+  min-height: 42px;
 }
 .toolbar-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   gap: 0.4rem;
 }
 .breadcrumb {
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.breadcrumb .crumb {
+  white-space: nowrap;
 }
 .crumb {
   background: none;
@@ -506,12 +516,27 @@ main {
   align-items: center;
 }
 .viewport-trigger {
-  display: none; /* shown only on compact screens */
+  display: none; /* shown only when the pane is narrow (container query) */
+  align-items: center;
+  gap: 0.3rem;
+}
+.vp-icon {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  flex-shrink: 0;
+}
+.vp-caret {
+  font-size: 0.6rem;
+  opacity: 0.7;
 }
 .viewport-panel {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.4rem;
 }
 .vp-preset {
@@ -865,7 +890,8 @@ main {
   color: #b08cf0;
 }
 
-/* ── Responsive: progressively compact the header + toolbar ──────────── */
+/* ── Responsive ──────────────────────────────────────────────────────── */
+/* Header compaction is keyed to the viewport (the header spans full width). */
 @media (max-width: 900px) {
   .count {
     display: none;
@@ -875,27 +901,31 @@ main {
   header .version {
     display: none;
   }
+  .seg-btn {
+    padding: 0.25rem 0.45rem;
+  }
 }
-/* Compact: collapse the viewport controls into a popover, keep row 1 on one
-   line so switching Preview/Code never reflows the toggle. */
-@media (max-width: 820px) {
+@media (max-width: 520px) {
+  /* Icon-only action buttons + drop the "Theme" label to save header space */
+  #mode-btn .btn-label,
+  #display-toggle .btn-label {
+    display: none;
+  }
+  .pl-toggle-label {
+    font-size: 0;
+    gap: 0;
+  }
+  .pl-toggle-label .pl-toggle-select {
+    font-size: 0.78rem;
+  }
+}
+
+/* Toolbar collapse is keyed to the PANE width (container query), so it reacts
+   to the sidebar being open/closed, not just the window width. Collapse the
+   viewport controls into a popover when the pane is narrow. */
+@container pane (max-width: 800px) {
   .toolbar-row {
-    flex-wrap: nowrap;
-    /* Fixed height so hiding the viewport trigger in code mode can't shift the
-       view toggle vertically. */
-    min-height: 42px;
-  }
-  .toolbar-controls {
-    flex-wrap: nowrap;
-  }
-  .breadcrumb {
-    flex: 1 1 auto;
-    min-width: 0;
-    flex-wrap: nowrap;
-    overflow: hidden;
-  }
-  .breadcrumb .crumb {
-    white-space: nowrap;
+    padding: 0.3rem 0.5rem;
   }
   .viewport-trigger {
     display: inline-flex;
@@ -929,36 +959,8 @@ main {
     justify-content: flex-start;
   }
 }
-@media (max-width: 900px) {
-  .count {
-    display: none;
-  }
-}
-@media (max-width: 768px) {
-  header .version {
-    display: none;
-  }
-  .seg-btn {
-    padding: 0.25rem 0.45rem;
-  }
-}
-@media (max-width: 520px) {
-  /* Icon-only action buttons + drop the "Theme" label to save header space */
-  #mode-btn .btn-label,
-  #display-toggle .btn-label {
-    display: none;
-  }
-  .pl-toggle-label {
-    font-size: 0;
-    gap: 0;
-  }
-  .pl-toggle-label .pl-toggle-select {
-    font-size: 0.78rem;
-  }
-  .toolbar-row {
-    padding: 0.3rem 0.5rem;
-  }
-  /* Show only the current crumb on small screens (full trail via the menu) */
+/* Very narrow pane: show only the current breadcrumb (full trail via the menu) */
+@container pane (max-width: 420px) {
   .breadcrumb .crumb:not(.current),
   .breadcrumb .crumb-sep {
     display: none;

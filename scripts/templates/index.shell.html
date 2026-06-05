@@ -69,7 +69,12 @@
                 aria-expanded="false"
                 title="Viewport size"
               >
-                📐 <span id="viewport-trigger-label">Full</span>
+                <svg class="vp-icon" viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="1.5" y="2.5" width="13" height="8.5" rx="1.2" />
+                  <path d="M5.5 14h5M8 11v3" />
+                </svg>
+                <span id="viewport-trigger-label">Full</span>
+                <span class="vp-caret" aria-hidden="true">▾</span>
               </button>
               <div class="viewport-panel" id="viewport-panel">
                 <div
