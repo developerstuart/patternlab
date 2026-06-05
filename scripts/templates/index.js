@@ -204,6 +204,24 @@ const reflowHeaderToggles = () => {
   }
 };
 
+/* ── Toolbar: collapse based on actual fit, not fixed breakpoints ───────
+   The breadcrumb length varies (depth, long names, variations), so measure:
+   if the inline breadcrumb is clipped, collapse the viewport controls into
+   their popover; if it is still clipped, collapse the breadcrumb to a dropdown. */
+const breadcrumbClipped = () => {
+  const bc = $("breadcrumb");
+  return bc.scrollWidth > bc.clientWidth + 1;
+};
+const reflowToolbar = () => {
+  const toolbar = $("main-toolbar");
+  if (!toolbar) return;
+  // Reset to fully expanded so widths are measurable, then decide.
+  toolbar.classList.remove("vp-collapsed", "bc-collapsed");
+  if (!breadcrumbClipped()) return;
+  toolbar.classList.add("vp-collapsed");
+  if (breadcrumbClipped()) toolbar.classList.add("bc-collapsed");
+};
+
 setupToggles();
 toggleNodes = [...$("pl-toggles").children];
 
@@ -709,6 +727,7 @@ const renderActiveView = () => {
     $("viewport-group").style.display = "none";
     closeAllPopovers();
     renderCodeView(activeComponent.id);
+    reflowToolbar();
     return;
   }
   $("code-view").style.display = "none";
@@ -717,6 +736,7 @@ const renderActiveView = () => {
     ? ""
     : "none";
   applyPreview();
+  reflowToolbar();
   // Only (re)load the iframe when the target actually changes — toggling back
   // from Code must not force a reload (which causes a flash).
   const frame = $("preview-frame");
@@ -934,6 +954,7 @@ const showFolder = (
   activeId = node.id;
   hideAllPanels();
   renderBreadcrumb(node.id);
+  reflowToolbar();
   closeNavOnMobile();
   if (updateHistory) setRoute(node.id, { replace: replaceHistory });
   expandToNode(node.id);
@@ -1060,6 +1081,7 @@ const showHome = ({ updateHistory = true, replaceHistory = false } = {}) => {
   activeId = null;
   hideAllPanels();
   renderBreadcrumb(null);
+  reflowToolbar();
   if (updateHistory) setRoute(null, { replace: replaceHistory });
 
   const hv = $("home-view");
@@ -1211,11 +1233,15 @@ buildTree(TREE.children || [], $("tree-root"), 0, null);
 setupViewportResizing();
 setupPopover($("viewport-trigger"), $("viewport-panel"));
 setupPopover($("display-toggle"), $("display-panel"));
-// Re-home overflowing header toggles whenever the header width changes.
+// Re-home overflowing header toggles + re-evaluate the toolbar collapse
+// whenever the available width changes.
 reflowHeaderToggles();
+reflowToolbar();
 if (typeof ResizeObserver !== "undefined") {
   const headerEl = document.querySelector("header");
   if (headerEl) new ResizeObserver(reflowHeaderToggles).observe(headerEl);
+  const mainEl = document.querySelector("main");
+  if (mainEl) new ResizeObserver(reflowToolbar).observe(mainEl);
 }
 if (!UI_CONFIG.enableResizeHandles) {
   document.querySelectorAll(".resize-handle").forEach((el) => {

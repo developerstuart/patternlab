@@ -210,9 +210,6 @@ main {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* Query container so the toolbar responds to the PANE width (which excludes
-     the sidebar), not the viewport width. */
-  container: pane / inline-size;
 }
 .main-toolbar {
   display: flex;
@@ -969,52 +966,48 @@ main {
   }
 }
 
-/* Toolbar collapse is keyed to the PANE width (container query), so it reacts
-   to the sidebar being open/closed, not just the window width. Collapse the
-   viewport controls into a popover when the pane is narrow. */
-@container pane (max-width: 800px) {
-  .toolbar-row {
-    padding: 0.3rem 0.5rem;
-  }
-  .viewport-trigger {
-    display: inline-flex;
-  }
-  .viewport-panel {
-    /* becomes the popover content */
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 40;
-    display: none;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.5rem;
-    padding: 0.6rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
-  }
-  .viewport-panel.open {
-    display: flex;
-  }
-  #viewport-tools {
-    display: none; /* use the compact preset dropdown instead */
-  }
-  .vp-preset {
-    display: inline-block;
-  }
-  .viewport-size {
-    justify-content: flex-start;
-  }
+/* Toolbar collapse is driven by JS (reflowToolbar) measuring actual fit, not a
+   fixed breakpoint — so a long/deep breadcrumb collapses the controls in time.
+   The .vp-collapsed / .bc-collapsed classes are toggled on #main-toolbar. */
+.main-toolbar.vp-collapsed .toolbar-row {
+  padding: 0.3rem 0.5rem;
 }
-/* Narrow pane: collapse the breadcrumb into a dropdown so the current page name
-   is always visible and the ancestors stay reachable in the menu. */
-@container pane (max-width: 620px) {
-  .breadcrumb {
-    display: none;
-  }
-  .popover.breadcrumb-menu {
-    display: inline-flex;
-  }
+.main-toolbar.vp-collapsed .viewport-trigger {
+  display: inline-flex;
+}
+.main-toolbar.vp-collapsed .viewport-panel {
+  /* becomes the popover content */
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 40;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.main-toolbar.vp-collapsed .viewport-panel.open {
+  display: flex;
+}
+.main-toolbar.vp-collapsed #viewport-tools {
+  display: none; /* use the compact preset dropdown instead */
+}
+.main-toolbar.vp-collapsed .vp-preset {
+  display: inline-block;
+}
+.main-toolbar.vp-collapsed .viewport-size {
+  justify-content: flex-start;
+}
+/* When the breadcrumb still doesn't fit, swap the inline trail for a dropdown so
+   the current page name is always visible and ancestors stay reachable. */
+.main-toolbar.bc-collapsed .breadcrumb {
+  display: none;
+}
+.main-toolbar.bc-collapsed .popover.breadcrumb-menu {
+  display: inline-flex;
 }
