@@ -80,6 +80,7 @@ header .version {
 }
 .count {
   font-size: 0.78rem;
+  padding-top: 0.4em;
   color: var(--text-muted);
 }
 .spacer {
