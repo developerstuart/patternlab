@@ -1,6 +1,6 @@
 {
   "name": "@developerstuart/patternlab-core",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Reusable Pattern Lab core engine with Node + PHP Twig rendering",
   "type": "module",
   "bin": {
