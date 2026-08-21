@@ -247,7 +247,17 @@ export const loadPatternlabConfig = (input) => {
     options.configPath ?? path.join(repoRoot, "patternlab.config.json"),
   );
   const loaded = readJsonSafe(configPath) ?? {};
-  const pkg = readJsonSafe(path.join(coreRoot, "package.json")) ?? {};
+  const corePkg = readJsonSafe(path.join(coreRoot, "package.json")) ?? {};
+  const consumerPkg =
+    repoRoot === coreRoot
+      ? corePkg
+      : (readJsonSafe(path.join(repoRoot, "package.json")) ?? {});
+  const readVersion = (candidate) =>
+    typeof candidate?.version === "string" ? candidate.version : "";
+  // The UI reports the consuming project's version; the core version is kept
+  // separately so tooling can still report which engine produced the build.
+  const coreVersion = readVersion(corePkg);
+  const packageVersion = readVersion(consumerPkg) || coreVersion;
   const merged = mergeDeep(DEFAULT_CONFIG, loaded);
   const configWarnings = [];
 
@@ -306,7 +316,8 @@ export const loadPatternlabConfig = (input) => {
 
   return {
     ...merged,
-    packageVersion: typeof pkg.version === "string" ? pkg.version : "",
+    packageVersion,
+    corePackageVersion: coreVersion,
     paths: {
       ...merged.paths,
       ...pathConfig,
@@ -354,10 +365,9 @@ export const loadPatternlabConfig = (input) => {
     },
     plugins: resolvedPlugins,
     _meta: {
-      titleWithVersion:
-        typeof pkg.version === "string" && pkg.version
-          ? `${merged.title} v${pkg.version}`
-          : merged.title,
+      titleWithVersion: packageVersion
+        ? `${merged.title} v${packageVersion}`
+        : merged.title,
       cssBaseFilesRelative: cssBaseFiles.map((filePath) =>
         toPosix(path.relative(repoRoot, filePath)),
       ),
