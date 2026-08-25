@@ -117,6 +117,14 @@ Engines are mapped by file extension in `templating.engines`. Defaults:
 | `.hbs` | `handlebars` | **Caveat:** there is no real Handlebars engine — `.hbs` files are rendered through Mustache for basic `{{var}}` compatibility. Handlebars-specific features (helpers, `{{#each}}`, partials) are **not** supported. |
 | `.html` | `html` | Passed through as-is |
 
+Twig needs the renderer's Composer dependencies in `php/vendor`. A `postinstall`
+script (`scripts/postinstall.mjs`) runs `composer install` in `php/` after
+`npm install`. It is best-effort and never fails the install: it skips when
+`php/vendor` already exists, when `php` or `composer` are not on `PATH`, or when
+`PATTERNLAB_SKIP_COMPOSER=1` is set. If it is skipped, `.twig` files fall back to
+the minimal built-in renderer — run `composer install` inside `php/` to enable
+full Twig.
+
 ## Configuration reference
 
 All keys are optional and merged over the built-in defaults. Paths in `paths.*`

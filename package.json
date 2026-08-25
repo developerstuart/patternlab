@@ -1,6 +1,6 @@
 {
   "name": "@developerstuart/patternlab-core",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Reusable Pattern Lab core engine with Node + PHP Twig rendering",
   "type": "module",
   "bin": {
@@ -9,9 +9,11 @@
   "files": [
     "bin",
     "scripts",
-    "php"
+    "php",
+    "!php/vendor"
   ],
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "build": "node bin/patternlab.mjs build",
     "serve": "node bin/patternlab.mjs serve",
     "dev": "node bin/patternlab.mjs dev",
