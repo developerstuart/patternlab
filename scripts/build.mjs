@@ -5,10 +5,10 @@ import { createRuntimeContext } from "./lib/runtime-context.mjs";
 import { loadRootGlobalData, mergeDeep } from "./lib/global-data.mjs";
 import { createHookRunner, loadPlugins } from "./lib/plugins.mjs";
 import {
-  copyDir,
   getMtimeMs,
   readJsonSafe,
   readTextSafe,
+  syncDir,
   writeFileSafe,
 } from "./lib/core/fs.mjs";
 import { toPosix, toPublicAssetPath } from "./lib/core/path.mjs";
@@ -1190,7 +1190,7 @@ const writeSharedArtifacts = async (tree, renderables) => {
   await hooks.run("beforeWriteArtifacts", { tree, renderables });
   await writeCssJs(tree);
   writeCodeArtifacts(renderables);
-  copyDir(assetsRoot, path.join(distRoot, "assets"));
+  syncDir(assetsRoot, path.join(distRoot, "assets"));
 
   const publicTree = stripPrivate(tree);
   writeFile(

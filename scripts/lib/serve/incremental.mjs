@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { syncDir } from "../core/fs.mjs";
 
 export const createIncrementalRebuilder = ({
   srcRoot,
@@ -20,6 +21,23 @@ export const createIncrementalRebuilder = ({
 
   const removePathSafe = (target) => {
     fs.rmSync(target, { recursive: true, force: true });
+  };
+
+  // fs.watch reports directory creations and renames too, and a new directory
+  // may already hold files that were written before its watcher attached, so
+  // mirror the whole subtree rather than copying the path as a single file.
+  const syncAssetPath = ({ src, dist, exists }) => {
+    if (!exists) {
+      removePathSafe(dist);
+      return;
+    }
+    if (fs.statSync(src).isDirectory()) {
+      if (fs.existsSync(dist) && !fs.statSync(dist).isDirectory()) removePathSafe(dist);
+      syncDir(src, dist);
+      return;
+    }
+    if (fs.existsSync(dist) && fs.statSync(dist).isDirectory()) removePathSafe(dist);
+    copyFileSafe(src, dist);
   };
 
   let pending = [];
@@ -133,8 +151,13 @@ export const createIncrementalRebuilder = ({
 
       try {
         for (const c of classified.filter((x) => x.action === "asset")) {
-          if (c.exists) copyFileSafe(c.src, c.dist);
-          else removePathSafe(c.dist);
+          // Isolate failures so one unreadable asset cannot drop the whole
+          // batch (and with it the reload) on the floor.
+          try {
+            syncAssetPath(c);
+          } catch (err) {
+            console.error(`Asset sync failed for ${c.src}: ${err.message}`);
+          }
         }
         if (classified.some((c) => c.action === "meta")) {
           // modified-components re-discovers, rewrites the shared artifacts,

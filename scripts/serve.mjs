@@ -52,6 +52,8 @@ const runBuild = (args = []) =>
     });
   });
 
+const noStoreHeaders = watchMode ? { 'cache-control': 'no-store' } : {};
+
 const clients = new Set();
 const broadcastReload = () => {
   const data = `data: ${JSON.stringify({ type: 'reload' })}\n\n`;
@@ -111,12 +113,14 @@ const server = http.createServer((req, res) => {
     const injected = html.includes('</body>')
       ? html.replace('</body>', `${LIVE_RELOAD_SNIPPET}\n</body>`)
       : `${html}\n${LIVE_RELOAD_SNIPPET}`;
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', ...noStoreHeaders });
     res.end(injected);
     return;
   }
 
-  res.writeHead(200, { 'content-type': contentType(filePath) });
+  // Assets keep their filenames across edits, so without this the browser can
+  // serve a stale image/font/stylesheet straight from cache after a live reload.
+  res.writeHead(200, { 'content-type': contentType(filePath), ...noStoreHeaders });
   fs.createReadStream(filePath).pipe(res);
 });
 
