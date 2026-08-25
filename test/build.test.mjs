@@ -219,8 +219,10 @@ test('variation .md sets order/title; component .md overrides default label', { 
     const button = find(tree, 'atoms/button');
     // Component title unchanged; default render relabelled via default_label
     assert.equal(button.label, 'Button');
-    // order:0 first, then order:1 by title (Outline before Primary)
-    assert.deepEqual(button.variations.map((v) => v.label), ['Spooky', 'Outline', 'Primary']);
+    // The default render now sorts at order 0 (overridable via default_order),
+    // and button~ghost.md also pins order 0, so those two tie and fall back to
+    // label order (Primary before Spooky). Outline has no .md, so it gets order 1.
+    assert.deepEqual(button.variations.map((v) => v.label), ['Primary', 'Spooky', 'Outline']);
   } finally {
     fs.rmSync(ghostMd, { force: true });
     fs.rmSync(buttonMd, { force: true });
